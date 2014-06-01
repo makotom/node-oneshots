@@ -1,6 +1,6 @@
 (function(){
 	exports.exec = function(){
-		exports.echo("HEllo world\n");
+		exports.echo("Hello world!\n");
 		exports.end();
 	};
 })();

@@ -2,6 +2,7 @@
 	"use strict";
 
 	var WORKERS_KEEP_ALIVE = 10,	// Unit: seconds
+	WORKERS_TIMEOUT = 5,
 	GW_PORT = 12345;
 
 	// TODO: Check parameter integrity
@@ -43,7 +44,7 @@
 							var i = NaN;
 
 							for(i = 0; i < workers[path].length; i += 1){
-								if(!workers[path][i].isActive){
+								if(workers[path][i].isIdle){
 									worker = workers[path][i];
 									break;
 								}
@@ -53,16 +54,18 @@
 
 					if(worker === null){
 						worker = cluster.fork();
+						worker.isActive = true;
+
 						workers[path] = [worker];
 					}
 
-					worker.isActive = true;
+					worker.isIdle = false;
 					worker.lastManaged = new Date();
 
 					return worker;
 				},
 				idleWorker = function(worker){
-					worker.isActive = false;
+					worker.isIdle = true;
 					worker.lastManaged = new Date();
 				},
 				cleanupWorkers = function(){
@@ -71,7 +74,7 @@
 					for(path in workers){
 						if(workers.hasOwnProperty(path)){
 							workers[path].forEach(function(workerInPool, keyInPath){
-								if(!workerInPool.isActive && workerInPool.lastManaged.getTime() < killThreshold){
+								if((!workerInPool.isAlive || workerInPool.isIdle) && workerInPool.lastManaged.getTime() < killThreshold){
 									workerInPool.kill();
 									workers[path].splice(keyInPath, 1);
 								}
@@ -85,12 +88,17 @@
 
 				httpd.on("request", function(httpReq, httpRes){
 					var worker = invokeWorker(httpReq.url),
-					order = new BalancerMessage(httpReq.url);
+					workerReq = new BalancerMessage(httpReq.url),
 
-					worker.send(order);
+					timeoutWorker = function(){
+						httpRes.end();
+						worker.kill();
+						worker.isActive = false;
+					},
+					timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000),
 
-					worker.on("message", function(workerMes){
-						if(workerMes.key !== order.key){
+					workerMessageReceptor = function(workerMes){
+						if(workerMes.key !== workerReq.key){
 							console.log(workerMes);
 							return;
 						}
@@ -98,34 +106,42 @@
 						switch(workerMes.type){
 							case "header":
 								httpRes.writeHead(workerMes.payload.status, workerMes.payload.headers);
+								clearTimeout(timeoutTimer);
+								timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000);
 								break;
 
 							case "end":
 								httpRes.end();
+								worker.removeListener("message", workerMessageReceptor);
 								idleWorker(worker);
+								clearTimeout(timeoutTimer);
 								break;
 
 							case "body":
 								httpRes.write(workerMes.payload);
+								clearTimeout(timeoutTimer);
+								timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000);
 								break;
+
 							default:
 								console.log(workerMes);
 						}
-					});
+					};
+
+					worker.send(workerReq);
+					worker.on("message", workerMessageReceptor);
 				});
 
 				setInterval(cleanupWorkers, WORKERS_KEEP_ALIVE * 1000);
 			})();
 		}else if(cluster.isWorker){ // Child process; worker
 			(function(){
-				var script = {
-					lastModified : null,
-					object : null
-				},
-				fs = require("fs");
+				var fs = require("fs"),
+
+				script = null;
 
 				process.on("message", function(request){
-					var httpInterface = (function(){
+					var httpInterface = (function(request){
 						var messengerKey = request.key, httpResponseHeaders = [], isHeaderSent = false,
 
 						flushHTTPHeaders = function(){
@@ -161,25 +177,24 @@
 								process.send(new WorkerMessage(messengerKey, "end"));
 							}
 						};
-					})();
+					})(request);
 
+					httpInterface.header("Content-Type: text/plain; charset=UTF-8");
 					try{
-						httpInterface.header("Content-Type: text/plain; charset=UTF-8");
-						httpInterface.echo(request.path + " called\n");
-
-						if(script.lastModified === null || fs.statSync("./node.js").mtime.getTime() > script.lastModified.getTime()){
-							script.object = require("./node.js");
-							script.object.header = httpInterface.header;
-							script.object.echo = httpInterface.echo;
-							script.object.end = httpInterface.end;
-							script.lastModified = new Date();
+						if(script === null || fs.statSync("./node.js").mtime.getTime() > script.builtAt.getTime()){
+							delete require.cache[fs.realpathSync("./node.js")];
+							script = require("./node.js");
+							script.builtAt = new Date();
 						}
 
-						script.object.exec();
+						script.header = httpInterface.header;
+						script.echo = httpInterface.echo;
+						script.end = httpInterface.end;
+
+						script.exec();
 					}
 					catch(e){
-						// TODO: Log to somewhere instead of dumping
-						httpInterface.echo(e.toString());
+						console.log(e);;
 					}
 				});
 			})();
