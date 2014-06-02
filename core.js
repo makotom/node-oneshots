@@ -249,7 +249,7 @@
 			responseInterface.header("Content-Type: text/html; charset=UTF-8");
 
 			try{
-				if(built === null || fs.statSync(request.header.url.pathname).mtime.getTime() > built.builtAt.getTime()){
+				if(built === null || fs.statSync(request.header.url.pathname).ctime.getTime() > built.builtAt.getTime()){
 					delete require.cache[fs.realpathSync(request.header.url.pathname)];
 					built = require(request.header.url.pathname);
 					built.builtAt = new Date();
