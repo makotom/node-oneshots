@@ -1,12 +1,12 @@
 (function(){
 	"use strict";
 
-	var WORKERS_IDLE = 10,	// Unit: second
-	WORKERS_TIMEOUT = 30,	// Unit: second
-	MESSAGE_CAP = 1024 * 16,	// Unit: octet
-	GW_PORT = 12345,
-
-	// TODO: Check parameter integrity
+	var CONFIG = {
+		servicePort : 37320,
+		workersCleanerInterval : 1800,	// Unit: second
+		workersTimeout : 30,	// Unit: second
+		messageCap : 1024 * 16	// Unit: octet
+	},
 
 	Messenger = function(salt, type, payload){
 		var messageTypeRegex = /^(?:header|body|end)$/;
@@ -74,7 +74,7 @@
 			worker.lastManaged = new Date();
 		},
 		cleanupWorkers = function(){
-			var path = "", killThreshold = new Date().getTime() - (WORKERS_IDLE * 1000);
+			var path = "", killThreshold = new Date().getTime() - (CONFIG.workersCleanerInterval * 1000);
 
 			for(path in workers){
 				if(workers.hasOwnProperty(path)){
@@ -99,7 +99,7 @@
 				worker.kill();
 				worker.isAlive = false;
 			},
-			timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000),
+			timeoutTimer = setTimeout(timeoutWorker, CONFIG.workersTimeout * 1000),
 
 			workerMessageReceptor = function(workerMes){
 				if(workerMes.salt !== salt){
@@ -120,14 +120,14 @@
 						}
 
 						clearTimeout(timeoutTimer);
-						timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000);
+						timeoutTimer = setTimeout(timeoutWorker, CONFIG.workersTimeout * 1000);
 
 						break;
 
 					case "body":
 						httpRes.write(new Buffer(workerMes.payload));
 						clearTimeout(timeoutTimer);
-						timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000);
+						timeoutTimer = setTimeout(timeoutWorker, CONFIG.workersTimeout * 1000);
 						break;
 
 					case "end":
@@ -149,7 +149,7 @@
 				while(p < bodyChunk.length){
 					messageContainer.payload = bodyChunk.slice(
 						p,
-						p = p + MESSAGE_CAP < bodyChunk.length ? p + MESSAGE_CAP : bodyChunk.length
+						p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
 					);
 					worker.send(messageContainer);
 				}
@@ -161,12 +161,12 @@
 
 		};
 
-		httpd.listen(GW_PORT, "::");
-		httpd.listen(GW_PORT, "0.0.0.0");
+		httpd.listen(CONFIG.servicePort, "::");
+		httpd.listen(CONFIG.servicePort, "0.0.0.0");
 
 		httpd.on("request", httpResponder);
 
-		setInterval(cleanupWorkers, WORKERS_IDLE * 1000);
+		setInterval(cleanupWorkers, CONFIG.workersCleanerInterval * 1000);
 	};
 
 	NodePool.prototype.worker = function(){
@@ -226,7 +226,7 @@
 					while(p < bodyChunk.length){
 						messageContainer.payload = bodyChunk.slice(
 							p,
-							p = p + MESSAGE_CAP < bodyChunk.length ? p + MESSAGE_CAP : bodyChunk.length
+							p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
 						);
 						process.send(messageContainer);
 					}
