@@ -1,7 +1,7 @@
 (function(){
 	"use strict";
 
-	var WORKERS_KEEP_ALIVE = 10,	// Unit: second
+	var WORKERS_IDLE = 10,	// Unit: second
 	WORKERS_TIMEOUT = 30,	// Unit: second
 	MESSAGE_CAP = 1024 * 16,	// Unit: octet
 	GW_PORT = 12345,
@@ -22,7 +22,7 @@
 			httpVersion : httpReq.httpVersion,
 			headers : httpReq.headers,
 			method : httpReq.method,
-			url : httpReq.url
+			url : require("url").parse(httpReq.url)
 		});
 	},
 	HTTPResponseHeaderMessenger = function(salt){
@@ -36,10 +36,10 @@
 	NodePool = function(){
 	},
 
-	cluster = require("cluster"), http = require("http");
+	cluster = require("cluster");
 
 	NodePool.prototype.balancer = function(){
-		var workers = {}, httpd = http.createServer(),
+		var workers = {}, httpd = require("http").createServer(),
 
 		invokeWorker = function(path){	// Route incoming requests to workers; create new one if required
 			var worker = null;
@@ -59,7 +59,7 @@
 
 			if(worker === null){
 				worker = cluster.fork();
-				worker.isActive = true;
+				worker.isAlive = true;
 
 				workers[path] = [worker];
 			}
@@ -74,12 +74,12 @@
 			worker.lastManaged = new Date();
 		},
 		cleanupWorkers = function(){
-			var path = "", killThreshold = new Date().getTime() - (WORKERS_KEEP_ALIVE * 1000);
+			var path = "", killThreshold = new Date().getTime() - (WORKERS_IDLE * 1000);
 
 			for(path in workers){
 				if(workers.hasOwnProperty(path)){
 					workers[path].forEach(function(workerInPool, keyInPath){
-						if((!workerInPool.isAlive || workerInPool.isIdle)){
+						if(!workerInPool.isAlive || workerInPool.isIdle){
 							if(workerInPool.lastManaged.getTime() < killThreshold){
 								workerInPool.kill();
 								workers[path].splice(keyInPath, 1);
@@ -97,7 +97,7 @@
 			timeoutWorker = function(){
 				httpRes.end();
 				worker.kill();
-				worker.isActive = false;
+				worker.isAlive = false;
 			},
 			timeoutTimer = setTimeout(timeoutWorker, WORKERS_TIMEOUT * 1000),
 
@@ -166,15 +166,15 @@
 
 		httpd.on("request", httpResponder);
 
-		setInterval(cleanupWorkers, WORKERS_KEEP_ALIVE * 1000);
+		setInterval(cleanupWorkers, WORKERS_IDLE * 1000);
 	};
 
 	NodePool.prototype.worker = function(){
-		var script = null, request = null,
+		var built = null, request = null,
 
 		fs = require("fs"),
 
-		genHttpInterface = function(request){
+		genResponseInterface = function(request){
 			var salt = request.salt, httpResponseHeaders = [], isHeaderSent = false,
 
 			flushHTTPHeaders = function(){
@@ -186,6 +186,7 @@
 					if(parts.length < 2){
 						return;
 					}
+
 					if(/^Status$/i.test(parts[0])){
 						parts.shift();
 
@@ -241,26 +242,28 @@
 			};
 		},
 		respondBalancerRequest = function(request){
-			var httpInterface = genHttpInterface(request);
+			var responseInterface = genResponseInterface(request), script = null;
 
-			httpInterface.header("Content-Type: text/html; charset=UTF-8");
+			responseInterface.header("Content-Type: text/html; charset=UTF-8");
+
 			try{
-				if(script === null || fs.statSync(request.header.url).mtime.getTime() > script.builtAt.getTime()){
-					delete require.cache[fs.realpathSync(request.header.url)];
-					script = require(request.header.url);
-					script.builtAt = new Date();
+				if(built === null || fs.statSync(request.header.url.pathname).mtime.getTime() > built.builtAt.getTime()){
+					delete require.cache[fs.realpathSync(request.header.url.pathname)];
+					built = require(request.header.url.pathname);
+					built.builtAt = new Date();
 				}
 
+				script = built;
 				script.request = request;
-				script.header = httpInterface.header;
-				script.echo = httpInterface.echo;
-				script.end = httpInterface.end;
+				script.header = responseInterface.header;
+				script.echo = responseInterface.echo;
+				script.end = responseInterface.end;
 
 				script.exec();
 			}
 			catch(e){
-				httpInterface.header("Status: 500");
-				httpInterface.end();
+				responseInterface.header("Status: 500");
+				responseInterface.end();
 				console.log(e);
 			}
 		},
