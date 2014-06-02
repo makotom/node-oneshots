@@ -74,18 +74,20 @@
 			worker.lastManaged = new Date();
 		},
 		cleanupWorkers = function(){
-			var path = "", killThreshold = new Date().getTime() - (CONFIG.workersCleanerInterval * 1000);
+			var path = "", killThreshold = new Date().getTime() - (CONFIG.workersCleanerInterval * 1000),
+
+			iterForEachPath = function(workerInPool, keyInPath){
+				if(!workerInPool.isAlive || workerInPool.isIdle){
+					if(workerInPool.lastManaged.getTime() < killThreshold){
+						workerInPool.kill();
+						workers[path].splice(keyInPath, 1);
+					}
+				}
+			};
 
 			for(path in workers){
 				if(workers.hasOwnProperty(path)){
-					workers[path].forEach(function(workerInPool, keyInPath){
-						if(!workerInPool.isAlive || workerInPool.isIdle){
-							if(workerInPool.lastManaged.getTime() < killThreshold){
-								workerInPool.kill();
-								workers[path].splice(keyInPath, 1);
-							}
-						}
-					});
+					workers[path].forEach(iterForEachPath);
 				}
 			}
 		},
@@ -286,7 +288,7 @@
 				case "end":
 					respondBalancerRequest(request);
 					break;
-				dafault:
+				default:
 					console.log(messenger);
 			}
 		};
