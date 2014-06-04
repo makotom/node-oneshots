@@ -233,6 +233,8 @@
 		respondBalancerRequest = function(request){
 			var responseInterface = genResponseInterface(request), script = null;
 
+			process.chdir(require("path").dirname(fs.realpathSync(request.header.http.url.pathname)));
+
 			responseInterface.header("Content-Type: text/html; charset=UTF-8");
 
 			try{
