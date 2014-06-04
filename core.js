@@ -163,7 +163,7 @@
 
 		fs = require("fs"),
 
-		genResponseInterface = function(request){
+		genInstanceInterface = function(request){
 			var salt = request.salt, httpResponseHeaders = [], isHeaderSent = false,
 
 			flushHTTPHeaders = function(){
@@ -198,10 +198,13 @@
 				process.send(messageContainer);
 			};
 
-			delete request.salt;
-
 			return {
-				header : function(expr){
+				request : {
+					socket : request.header.socket,
+					header : request.header.http,
+					body : Buffer.concat(request.body)
+				},
+				writeHeader : function(expr){
 					httpResponseHeaders.push(expr);
 				},
 				echo : function(bodyChunk){
@@ -231,11 +234,9 @@
 			};
 		},
 		respondBalancerRequest = function(request){
-			var responseInterface = genResponseInterface(request), script = null;
+			var instanceInterface = genInstanceInterface(request);
 
 			process.chdir(require("path").dirname(fs.realpathSync(request.header.http.url.pathname)));
-
-			responseInterface.header("Content-Type: text/html; charset=UTF-8");
 
 			try{
 				if(built === null || fs.statSync(request.header.http.url.pathname).ctime.getTime() > built.builtAt.getTime()){
@@ -244,21 +245,12 @@
 					built.builtAt = new Date();
 				}
 
-				script = built;
-				script.request = {
-					socket : request.header.socket,
-					header : request.header.http,
-					body : Buffer.concat(request.body)
-				};
-				script.header = responseInterface.header;
-				script.echo = responseInterface.echo;
-				script.end = responseInterface.end;
-
-				script.exec();
+				instanceInterface.writeHeader("Content-Type: text/html; charset=UTF-8");
+				built.exec(instanceInterface);
 			}
 			catch(e){
-				responseInterface.header("Status: 500");
-				responseInterface.end();
+				instanceInterface.writeHeader("Status: 500");
+				instanceInterface.end();
 				console.log(e);
 			}
 		},
