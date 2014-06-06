@@ -2,6 +2,8 @@
 	"use strict";
 
 	var CONFIG = {
+		uid : "http",
+		gid : "http",
 		servicePort : 37320,
 		workersKeepIdle : 3600,	// Unit: second
 		workersTimeout : 60,	// Unit: second
@@ -280,6 +282,8 @@
 
 		process.on("message", balancerMessageReceptor);
 	};
+
+	process.setuid(CONFIG.uid) && process.setgid(CONFIG.gid);
 
 	if(cluster.isMaster){
 		new NodePool().balancer();
