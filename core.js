@@ -236,9 +236,9 @@
 		respondBalancerRequest = function(request){
 			var instanceInterface = genInstanceInterface(request);
 
-			process.chdir(require("path").dirname(fs.realpathSync(request.header.http.url.pathname)));
-
 			try{
+				process.chdir(require("path").dirname(fs.realpathSync(request.header.http.url.pathname)));
+
 				if(built === null || fs.statSync(request.header.http.url.pathname).ctime.getTime() > built.builtAt.getTime()){
 					delete require.cache[fs.realpathSync(request.header.http.url.pathname)];
 					built = require(request.header.http.url.pathname);
