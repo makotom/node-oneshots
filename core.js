@@ -31,10 +31,11 @@
 				localPort : req.socket.localPort
 			},
 			http : {
+				scheme : req.scheme.toUpperCase(),
 				version : req.httpVersion,
 				method : req.method,
 				uri : req.url,
-				headers : req.headers,
+				headers : req.headers
 			}
 		});
 	},
@@ -53,6 +54,8 @@
 
 	NodePool.prototype.balancer = function(){
 		var workers = {}, server = require("http").createServer(),
+
+		url = require("url"),
 
 		terminateWorker = function(){
 			workers[this.workFor].splice(workers[this.workFor].indexOf(this), 1);
@@ -92,7 +95,8 @@
 
 		responder = function(req, res){
 			var salt = Math.random(),
-			invoking = require("url").parse(req.url).pathname,
+			requested = url.parse(req.url.replace(/^\//, "")),
+			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
 
@@ -140,6 +144,9 @@
 						// console.log(workerMes);
 				}
 			};
+
+			req.url = requested.path;
+			req.scheme = requested.protocol.replace(/:$/, "");
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
