@@ -2,8 +2,10 @@
 	"use strict";
 
 	var CONFIG = {
-		uid : "http",
-		gid : "http",
+		serverUid : "http",
+		serverGid : "http",
+		listenIPv4 : true,
+		listenIPv6 : true,
 		servicePort : 37320,
 		workersKeepIdle : 3600,	// Unit: second
 		workersTimeout : 60,	// Unit: second
@@ -19,23 +21,24 @@
 			payload : payload
 		};
 	},
-	HTTPRequestHeaderMessenger = function(salt, httpReq){
+	RequestHeaderMessenger = function(salt, invoking, req){
 		return new Messenger(salt, "header", {
+			invoking : invoking,
 			socket : {
-				remoteAddress : httpReq.socket.remoteAddress,
-				remotePort : httpReq.socket.remotePort,
-				localAddress : httpReq.socket.localAddress,
-				localPort : httpReq.socket.localPort
+				remoteAddress : req.socket.remoteAddress,
+				remotePort : req.socket.remotePort,
+				localAddress : req.socket.localAddress,
+				localPort : req.socket.localPort
 			},
 			http : {
-				httpVersion : httpReq.httpVersion,
-				headers : httpReq.headers,
-				method : httpReq.method,
-				url : require("url").parse(httpReq.url)
+				version : req.httpVersion,
+				method : req.method,
+				uri : req.url,
+				headers : req.headers,
 			}
 		});
 	},
-	HTTPResponseHeaderMessenger = function(salt){
+	ResponseHeaderMessenger = function(salt){
 		return new Messenger(salt, "header", {
 			statusCode : 200,
 			reasonPhrase : undefined,
@@ -49,9 +52,14 @@
 	cluster = require("cluster");
 
 	NodePool.prototype.balancer = function(){
-		var workers = {}, httpd = require("http").createServer(),
+		var workers = {}, server = require("http").createServer(),
 
-		invokeWorker = function(path){	// Route incoming requests to workers; create new one if required
+		terminateWorker = function(){
+			workers[this.workFor].splice(workers[this.workFor].indexOf(this), 1);
+			this.removeAllListeners();
+			this.kill();
+		},
+		invokeWorker = function(path){
 			var worker = null;
 
 			if(typeof workers[path] === typeof []){
@@ -67,6 +75,7 @@
 			if(worker === null){
 				worker = cluster.fork();
 				worker.workFor = path;
+				worker.terminate = terminateWorker;
 				workers[path] = [worker];
 			}
 
@@ -77,37 +86,37 @@
 		idleWorker = function(worker){
 			worker.isIdle = true;
 			worker.stopIdling = setTimeout(function(){
-				worker.kill();
-				workers[worker.workFor].splice(workers[worker.workFor].indexOf(worker), 1);
+				worker.terminate();
 			}, CONFIG.workersKeepIdle * 1000);
 		},
-		httpResponder = function(httpReq, httpRes){
-			var salt = Math.random(),
 
-			worker = invokeWorker(httpReq.url),
+		responder = function(req, res){
+			var salt = Math.random(),
+			invoking = require("url").parse(req.url).pathname,
+
+			worker = invokeWorker(invoking),
 
 			abortWorker = function(){
-				httpRes.end();
-				worker.kill();
-				workers[worker.workFor].splice(workers[worker.workFor].indexOf(worker), 1);
+				res.end();
+				worker.terminate();
 			},
 
 			workerMessageReceptor = function(workerMes){
 				if(workerMes.salt !== salt){
-					console.log(workerMes);
+					// console.log(workerMes);
 					return;
 				}
 
 				switch(workerMes.type){
 					case "header":
 						if(typeof workerMes.payload.reasonPhrase === typeof ""){
-							httpRes.writeHead(
+							res.writeHead(
 								workerMes.payload.statusCode,
 								workerMes.payload.reasonPhrase,
 								workerMes.payload.headers
 							);
 						}else{
-							httpRes.writeHead(workerMes.payload.statusCode, workerMes.payload.headers);
+							res.writeHead(workerMes.payload.statusCode, workerMes.payload.headers);
 						}
 
 						clearTimeout(worker.timeout);
@@ -116,26 +125,25 @@
 						break;
 
 					case "body":
-						httpRes.write(new Buffer(workerMes.payload));
+						res.write(new Buffer(workerMes.payload));
 						clearTimeout(worker.timeout);
 						worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
 						break;
 
 					case "end":
-						httpRes.end();
-						worker.removeListener("message", workerMessageReceptor);
-						idleWorker(worker);
+						res.end();
 						clearTimeout(worker.timeout);
+						idleWorker(worker);
 						break;
 
 					default:
-						console.log(workerMes);
+						// console.log(workerMes);
 				}
 			};
 
-			worker.send(new HTTPRequestHeaderMessenger(salt, httpReq));
+			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
-			httpReq.on("data", function(bodyChunk){
+			req.on("data", function(bodyChunk){
 				var messageContainer = new Messenger(salt, "body", null), p = 0;
 
 				while(p < bodyChunk.length){
@@ -147,17 +155,22 @@
 				}
 			});
 
-			httpReq.on("end", function(){
+			req.on("end", function(){
 				worker.send(new Messenger(salt, "end"));
 				worker.on("message", workerMessageReceptor);
 				worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
 			});
+
+			res.on("close", function(){
+				clearTimeout(worker.timeout);
+				worker.terminate();
+			});
 		};
 
-		httpd.listen(CONFIG.servicePort, "::");
-		httpd.listen(CONFIG.servicePort, "0.0.0.0");
+		CONFIG.listenIPv4 && server.listen(CONFIG.servicePort, "0.0.0.0");
+		CONFIG.listenIPv6 && server.listen(CONFIG.servicePort, "::");
 
-		httpd.on("request", httpResponder);
+		server.on("request", responder);
 	};
 
 	NodePool.prototype.worker = function(){
@@ -166,12 +179,12 @@
 		fs = require("fs"),
 
 		genInstanceInterface = function(request){
-			var salt = request.salt, httpResponseHeaders = [], isHeaderSent = false,
+			var salt = request.salt, responseHeaders = [], isHeaderSent = false,
 
-			flushHTTPHeaders = function(){
-				var messageContainer = new HTTPResponseHeaderMessenger(salt);
+			flushHeaders = function(){
+				var messageContainer = new ResponseHeaderMessenger(salt);
 
-				httpResponseHeaders.forEach(function(expr){
+				responseHeaders.forEach(function(expr){
 					var parts = expr.split(":");
 
 					if(parts.length < 2){
@@ -207,13 +220,13 @@
 					body : Buffer.concat(request.body)
 				},
 				writeHeader : function(expr){
-					httpResponseHeaders.push(expr);
+					responseHeaders.push(expr);
 				},
 				echo : function(bodyChunk){
 					var messageContainer = new Messenger(salt, "body", null), p = 0;
 
 					if(!isHeaderSent){
-						flushHTTPHeaders();
+						flushHeaders();
 						isHeaderSent = true;
 					}
 
@@ -227,7 +240,7 @@
 				},
 				end : function(){
 					if(!isHeaderSent){
-						flushHTTPHeaders();
+						flushHeaders();
 						isHeaderSent = true;
 					}
 
@@ -239,11 +252,11 @@
 			var instanceInterface = genInstanceInterface(request);
 
 			try{
-				process.chdir(require("path").dirname(fs.realpathSync(request.header.http.url.pathname)));
+				process.chdir(require("path").dirname(fs.realpathSync(request.header.invoking)));
 
-				if(built === null || fs.statSync(request.header.http.url.pathname).ctime.getTime() > built.builtAt.getTime()){
-					delete require.cache[fs.realpathSync(request.header.http.url.pathname)];
-					built = require(request.header.http.url.pathname);
+				if(built === null || fs.statSync(request.header.invoking).ctime.getTime() > built.builtAt.getTime()){
+					delete require.cache[fs.realpathSync(request.header.invoking)];
+					built = require(request.header.invoking);
 					built.builtAt = new Date();
 				}
 
@@ -253,7 +266,7 @@
 			catch(e){
 				instanceInterface.writeHeader("Status: 500");
 				instanceInterface.end();
-				console.log(e);
+				// console.log(e);
 			}
 		},
 		balancerMessageReceptor = function(messenger){
@@ -276,14 +289,14 @@
 					respondBalancerRequest(request);
 					break;
 				default:
-					console.log(messenger);
+					// console.log(messenger);
 			}
 		};
 
 		process.on("message", balancerMessageReceptor);
 	};
 
-	process.setuid(CONFIG.uid) && process.setgid(CONFIG.gid);
+	process.setuid(CONFIG.serverUid) && process.setgid(CONFIG.serverGid);
 
 	if(cluster.isMaster){
 		new NodePool().balancer();
