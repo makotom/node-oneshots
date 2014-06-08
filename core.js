@@ -31,12 +31,12 @@
 				localPort : req.socket.localPort
 			},
 			http : {
-				scheme : req.scheme.toUpperCase(),
 				version : req.httpVersion,
 				method : req.method,
 				uri : req.url,
 				headers : req.headers
-			}
+			},
+			env : req.cgiParams
 		});
 	},
 	ResponseHeaderMessenger = function(salt){
@@ -53,7 +53,7 @@
 	cluster = require("cluster");
 
 	NodePool.prototype.balancer = function(){
-		var workers = {}, server = require("http").createServer(),
+		var workers = {}, server = require("node-fastcgi").createServer(),
 
 		url = require("url"),
 
@@ -95,14 +95,22 @@
 
 		responder = function(req, res){
 			var salt = Math.random(),
-			requested = url.parse(req.url.replace(/^\//, "")),
+			requested = url.parse(req.cgiParams.SCRIPT_FILENAME.replace(/^[^:]*:fcgi:/, "fcgi:")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
 
-			abortWorker = function(){
+			scheduleEnd = function(){
+				if(res.stdout._writableState.buffer.length > 0){
+					res.stdout.on("drain", scheduleEnd);
+					return;
+				}
 				res.end();
+			},
+
+			abortWorker = function(){
 				worker.terminate();
+				setImmediate(scheduleEnd);
 			},
 
 			workerMessageReceptor = function(workerMes){
@@ -135,7 +143,7 @@
 						break;
 
 					case "end":
-						res.end();
+						setImmediate(scheduleEnd);
 						clearTimeout(worker.timeout);
 						idleWorker(worker);
 						break;
@@ -144,9 +152,6 @@
 						// console.log(workerMes);
 				}
 			};
-
-			req.url = requested.path;
-			req.scheme = requested.protocol.replace(/:$/, "");
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
@@ -192,13 +197,13 @@
 				var messageContainer = new ResponseHeaderMessenger(salt);
 
 				responseHeaders.forEach(function(expr){
-					var parts = expr.trim().split(":");
+					var parts = expr.trim().split(":"), fieldName = parts.shift();
 
-					if(parts.length < 2){
+					if(parts.length < 1){
 						return;
 					}
 
-					if(/^Status$/i.test(parts[0])){
+					if(/^Status$/i.test(fieldName)){
 						let statusTerms = parts.join(":").trim().split(" ");
 
 						messageContainer.payload.statusCode = parseInt(statusTerms.shift(), 10);
@@ -207,7 +212,7 @@
 							messageContainer.payload.reasonPhrase = statusTerms.join(" ").toString();
 						}
 					}else{
-						messageContainer.payload.headers[parts.shift()] = parts.join(":");
+						messageContainer.payload.headers[fieldName] = parts.join(":");
 					}
 				});
 
@@ -218,6 +223,7 @@
 				request : {
 					socket : request.header.socket,
 					header : request.header.http,
+					env : request.header.env,
 					body : Buffer.concat(request.body)
 				},
 				writeHeader : function(expr){
