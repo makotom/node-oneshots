@@ -192,25 +192,19 @@
 				var messageContainer = new ResponseHeaderMessenger(salt);
 
 				responseHeaders.forEach(function(expr){
-					var parts = expr.split(":");
+					var parts = expr.trim().split(":");
 
 					if(parts.length < 2){
 						return;
 					}
 
 					if(/^Status$/i.test(parts[0])){
-						parts.shift();
+						let statusTerms = parts.join(":").trim().split(" ");
 
-						{
-							let statusTerms = parts.join(":").trim().split(" ");
+						messageContainer.payload.statusCode = parseInt(statusTerms.shift(), 10);
 
-							messageContainer.payload.statusCode = parseInt(statusTerms[0], 10);
-
-							statusTerms.shift();
-
-							if(typeof statusTerms[0] !== typeof undefined){
-								messageContainer.payload.reasonPhrase = statusTerms[0].toString();
-							}
+						if(typeof statusTerms[0] !== typeof undefined){
+							messageContainer.payload.reasonPhrase = statusTerms.join(" ").toString();
 						}
 					}else{
 						messageContainer.payload.headers[parts.shift()] = parts.join(":");
