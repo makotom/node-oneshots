@@ -151,6 +151,8 @@
 				}
 			};
 
+			res.stdout.conn.socket._write = require("./patch_socket.js")._write;
+
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
 			req.on("data", function (bodyChunk) {
