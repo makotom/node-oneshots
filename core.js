@@ -17,7 +17,7 @@
 
 		return {
 			salt : salt,
-			type : messageTypeRegex.test(type) ? type : "unknown",
+			type : messageTypeRegex.test(type) === true ? type : "unknown",
 			payload : payload
 		};
 	},
@@ -210,7 +210,7 @@
 
 						messageContainer.payload.statusCode = parseInt(statusTerms.shift(), 10);
 
-						if (typeof statusTerms[0] !== typeof undefined) {
+						if (statusTerms[0] !== undefined) {
 							messageContainer.payload.reasonPhrase = statusTerms.join(" ").toString();
 						}
 					} else {
@@ -234,17 +234,16 @@
 					responseHeaders.push(expr);
 				},
 
-				echo : function (bodyChunk) {
-					if (bodyChunk === undefined || bodyChunk.length === 0) {
+				echo : function (data) {
+					isHeaderSent === false && flushHeaders();
+
+					if (data === undefined || data === null || data.length === 0) {
 						return;
 					}
 
-					if (isHeaderSent === false) {
-						flushHeaders();
-					}
-
 					{
-						let messageContainer = new Messenger(salt, "body", null);
+						let messageContainer = new Messenger(salt, "body", null),
+						bodyChunk = (Buffer.isBuffer(data) === true || typeof data === typeof "") ? data : data.toString();
 
 						for (let p = 0; p < bodyChunk.length;) {
 							messageContainer.payload = bodyChunk.slice(
@@ -255,11 +254,9 @@
 						}
 					}
 				},
-				end : function () {
-					if (isHeaderSent === false) {
-						flushHeaders();
-					}
 
+				end : function () {
+					isHeaderSent === false && flushHeaders();
 					process.send(new Messenger(salt, "end"));
 				}
 			};
@@ -295,9 +292,7 @@
 					break;
 
 				case "body":
-					if (messenger.salt === request.salt) {
-						request.body.push(new Buffer(messenger.payload));
-					}
+					messenger.salt === request.salt && request.body.push(new Buffer(messenger.payload));
 					break;
 
 				case "end":
