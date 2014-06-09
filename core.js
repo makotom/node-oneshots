@@ -1,4 +1,4 @@
-(function(){
+(function () {
 	"use strict";
 
 	var CONFIG = {
@@ -12,7 +12,7 @@
 		messageCap : 1024 * 16	// Unit: octet
 	},
 
-	Messenger = function(salt, type, payload){
+	Messenger = function (salt, type, payload) {
 		var messageTypeRegex = /^(?:header|body|end)$/;
 
 		return {
@@ -21,7 +21,7 @@
 			payload : payload
 		};
 	},
-	RequestHeaderMessenger = function(salt, invoking, req){
+	RequestHeaderMessenger = function (salt, invoking, req) {
 		return new Messenger(salt, "header", {
 			invoking : invoking,
 			socket : {
@@ -39,7 +39,7 @@
 			env : req.cgiParams
 		});
 	},
-	ResponseHeaderMessenger = function(salt){
+	ResponseHeaderMessenger = function (salt) {
 		return new Messenger(salt, "header", {
 			statusCode : 200,
 			reasonPhrase : undefined,
@@ -47,87 +47,86 @@
 		});
 	},
 
-	NodePool = function(){
-	},
+	NodePool = function () {},
 
 	cluster = require("cluster");
 
-	NodePool.prototype.balancer = function(){
-		var workers = {}, server = require("node-fastcgi").createServer(),
+	NodePool.prototype.balancer = function () {
+		var server = require("node-fastcgi").createServer(),
 
 		url = require("url"),
 
-		terminateWorker = function(){
-			workers[this.workFor].splice(workers[this.workFor].indexOf(this), 1);
+		terminateWorker = function () {
 			this.removeAllListeners();
 			this.kill();
 		},
-		invokeWorker = function(path){
+		invokeWorker = function (path) {
 			var worker = null;
 
-			if(typeof workers[path] === typeof []){
-				for(let i = 0; i < workers[path].length; i += 1){
-					if(workers[path][i].isIdle){
-						worker = workers[path][i];
-						clearTimeout(worker.stopIdling);
-						break;
-					}
+			for (let workerId in cluster.workers) {
+				if (cluster.workers[workerId].workFor === path && cluster.workers[workerId].isIdle === true) {
+					worker = cluster.workers[workerId];
+					clearTimeout(cluster.workers[workerId].stopIdling);
+					break;
 				}
 			}
 
-			if(worker === null){
+			if (worker === null) {
 				worker = cluster.fork();
 				worker.workFor = path;
 				worker.terminate = terminateWorker;
-				workers[path] = [worker];
 			}
 
 			worker.isIdle = false;
 
 			return worker;
 		},
-		idleWorker = function(worker){
+		idleWorker = function (worker) {
 			worker.isIdle = true;
-			worker.stopIdling = setTimeout(function(){
+			worker.stopIdling = setTimeout(function () {
 				worker.terminate();
 			}, CONFIG.workersKeepIdle * 1000);
 		},
 
-		responder = function(req, res){
+		responder = function (req, res) {
 			var salt = Math.random(),
 			requested = url.parse(req.cgiParams.SCRIPT_FILENAME.replace(/^[^:]*:fcgi:/, "fcgi:")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
 
-			scheduleEnd = function(){
-				if(res.stdout._writableState.buffer.length > 0){
+			scheduleEnd = function () {
+				if (res.stdout._writableState.buffer.length > 0) {
 					res.stdout.on("drain", scheduleEnd);
 					return;
 				}
-				res.end();
+
+				setImmediate(function () {
+					res.end();
+					idleWorker(worker);
+				});
 			},
 
-			abortWorker = function(){
+			abortWorker = function () {
 				worker.terminate();
 				setImmediate(scheduleEnd);
 			},
 
-			workerMessageReceptor = function(workerMes){
-				if(workerMes.salt !== salt){
+			workerMessageReceptor = function (workerMes) {
+				if (workerMes.salt !== salt) {
 					// console.log(workerMes);
 					return;
 				}
 
-				switch(workerMes.type){
+				switch (workerMes.type) {
 					case "header":
-						if(typeof workerMes.payload.reasonPhrase === typeof ""){
+						if (typeof workerMes.payload.reasonPhrase === typeof "") {
 							res.writeHead(
 								workerMes.payload.statusCode,
 								workerMes.payload.reasonPhrase,
 								workerMes.payload.headers
 							);
-						}else{
+						} else {
 							res.writeHead(workerMes.payload.statusCode, workerMes.payload.headers);
 						}
 
@@ -145,7 +144,6 @@
 					case "end":
 						setImmediate(scheduleEnd);
 						clearTimeout(worker.timeout);
-						idleWorker(worker);
 						break;
 
 					default:
@@ -155,10 +153,10 @@
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
-			req.on("data", function(bodyChunk){
+			req.on("data", function (bodyChunk) {
 				var messageContainer = new Messenger(salt, "body", null), p = 0;
 
-				while(p < bodyChunk.length){
+				while (p < bodyChunk.length) {
 					messageContainer.payload = bodyChunk.slice(
 						p,
 						p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
@@ -167,13 +165,13 @@
 				}
 			});
 
-			req.on("end", function(){
+			req.on("end", function () {
 				worker.send(new Messenger(salt, "end"));
 				worker.on("message", workerMessageReceptor);
 				worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
 			});
 
-			res.on("close", function(){
+			res.on("close", function () {
 				clearTimeout(worker.timeout);
 				worker.terminate();
 			});
@@ -185,33 +183,36 @@
 		server.on("request", responder);
 	};
 
-	NodePool.prototype.worker = function(){
+	NodePool.prototype.worker = function () {
 		var built = null, request = null,
 
 		fs = require("fs"),
 
-		genInstanceInterface = function(request){
-			var salt = request.salt, responseHeaders = [], isHeaderSent = false,
+		genInstanceInterface = function (request) {
+			var salt = request.salt,
 
-			flushHeaders = function(){
+			responseHeaders = [],
+			isHeaderSent = false,
+
+			flushHeaders = function () {
 				var messageContainer = new ResponseHeaderMessenger(salt);
 
-				responseHeaders.forEach(function(expr){
+				responseHeaders.forEach(function (expr) {
 					var parts = expr.trim().split(":"), fieldName = parts.shift();
 
-					if(parts.length < 1){
+					if (parts.length < 1) {
 						return;
 					}
 
-					if(/^Status$/i.test(fieldName)){
+					if (/^Status$/i.test(fieldName) === true) {
 						let statusTerms = parts.join(":").trim().split(" ");
 
 						messageContainer.payload.statusCode = parseInt(statusTerms.shift(), 10);
 
-						if(typeof statusTerms[0] !== typeof undefined){
+						if (typeof statusTerms[0] !== typeof undefined) {
 							messageContainer.payload.reasonPhrase = statusTerms.join(" ").toString();
 						}
-					}else{
+					} else {
 						messageContainer.payload.headers[fieldName] = parts.join(":");
 					}
 				});
@@ -226,18 +227,20 @@
 					env : request.header.env,
 					body : Buffer.concat(request.body)
 				},
-				writeHeader : function(expr){
+
+				setHeader : function (expr) {
 					responseHeaders.push(expr);
 				},
-				echo : function(bodyChunk){
+
+				echo : function (bodyChunk) {
 					var messageContainer = new Messenger(salt, "body", null), p = 0;
 
-					if(!isHeaderSent){
+					if (isHeaderSent === false) {
 						flushHeaders();
 						isHeaderSent = true;
 					}
 
-					while(p < bodyChunk.length){
+					while (p < bodyChunk.length) {
 						messageContainer.payload = bodyChunk.slice(
 							p,
 							p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
@@ -245,8 +248,8 @@
 						process.send(messageContainer);
 					}
 				},
-				end : function(){
-					if(!isHeaderSent){
+				end : function () {
+					if (isHeaderSent === false) {
 						flushHeaders();
 						isHeaderSent = true;
 					}
@@ -255,29 +258,28 @@
 				}
 			};
 		},
-		respondBalancerRequest = function(request){
+		respondBalancerRequest = function (request) {
 			var instanceInterface = genInstanceInterface(request);
 
-			try{
+			try {
 				process.chdir(require("path").dirname(fs.realpathSync(request.header.invoking)));
 
-				if(built === null || fs.statSync(request.header.invoking).ctime.getTime() > built.builtAt.getTime()){
+				if (built === null || fs.statSync(request.header.invoking).ctime.getTime() > built.builtAt.getTime()) {
 					delete require.cache[fs.realpathSync(request.header.invoking)];
 					built = require(request.header.invoking);
 					built.builtAt = new Date();
 				}
 
-				instanceInterface.writeHeader("Content-Type: text/html; charset=UTF-8");
+				instanceInterface.setHeader("Content-Type: text/html; charset=UTF-8");
 				built.exec(instanceInterface);
-			}
-			catch(e){
-				instanceInterface.writeHeader("Status: 500");
+			} catch (e) {
+				instanceInterface.setHeader("Status: 500");
 				instanceInterface.end();
 				// console.log(e);
 			}
 		},
-		balancerMessageReceptor = function(messenger){
-			switch(messenger.type){
+		balancerMessageReceptor = function (messenger) {
+			switch (messenger.type) {
 				case "header":
 					request = {
 						salt : messenger.salt,
@@ -287,7 +289,7 @@
 					break;
 
 				case "body":
-					if(messenger.salt === request.salt){
+					if (messenger.salt === request.salt) {
 						request.body.push(new Buffer(messenger.payload));
 					}
 					break;
@@ -305,9 +307,9 @@
 
 	process.setuid(CONFIG.serverUid) && process.setgid(CONFIG.serverGid);
 
-	if(cluster.isMaster){
+	if (cluster.isMaster === true) {
 		new NodePool().balancer();
-	}else if(cluster.isWorker){
+	} else if (cluster.isWorker === true) {
 		new NodePool().worker();
 	}
 })();
