@@ -56,9 +56,13 @@
 
 		url = require("url"),
 
-		terminateWorker = function () {
-			this.removeAllListeners();
-			this.kill();
+		idleWorker = function () {
+			var self = this;
+
+			self.isIdle = true;
+			self.stopIdling = setTimeout(function () {
+				self.kill();
+			}, CONFIG.workersKeepIdle * 1000);
 		},
 		invokeWorker = function (path) {
 			var worker = null;
@@ -74,18 +78,12 @@
 			if (worker === null) {
 				worker = cluster.fork();
 				worker.workFor = path;
-				worker.terminate = terminateWorker;
+				worker.idle = idleWorker;
 			}
 
 			worker.isIdle = false;
 
 			return worker;
-		},
-		idleWorker = function (worker) {
-			worker.isIdle = true;
-			worker.stopIdling = setTimeout(function () {
-				worker.terminate();
-			}, CONFIG.workersKeepIdle * 1000);
 		},
 
 		responder = function (req, res) {
@@ -103,13 +101,12 @@
 
 				setImmediate(function () {
 					res.end();
-					idleWorker(worker);
 				});
 			},
 
 			abortWorker = function () {
-				worker.terminate();
 				setImmediate(scheduleEnd);
+				worker.kill();
 			},
 
 			workerMessageReceptor = function (workerMes) {
@@ -144,6 +141,8 @@
 					case "end":
 						setImmediate(scheduleEnd);
 						clearTimeout(worker.timeout);
+						worker.removeListener("message", workerMessageReceptor);
+						worker.idle();
 						break;
 
 					default:
@@ -175,7 +174,7 @@
 
 			res.on("close", function () {
 				clearTimeout(worker.timeout);
-				worker.terminate();
+				worker.kill();
 			});
 		};
 
@@ -220,6 +219,7 @@
 				});
 
 				process.send(messageContainer);
+				isHeaderSent = true;
 			};
 
 			return {
@@ -235,25 +235,29 @@
 				},
 
 				echo : function (bodyChunk) {
-					var messageContainer = new Messenger(salt, "body", null), p = 0;
+					if (bodyChunk === undefined || bodyChunk.length === 0) {
+						return;
+					}
 
 					if (isHeaderSent === false) {
 						flushHeaders();
-						isHeaderSent = true;
 					}
 
-					while (p < bodyChunk.length) {
-						messageContainer.payload = bodyChunk.slice(
-							p,
-							p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
-						);
-						process.send(messageContainer);
+					{
+						let messageContainer = new Messenger(salt, "body", null);
+
+						for (let p = 0; p < bodyChunk.length;) {
+							messageContainer.payload = bodyChunk.slice(
+								p,
+								p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
+							);
+							process.send(messageContainer);
+						}
 					}
 				},
 				end : function () {
 					if (isHeaderSent === false) {
 						flushHeaders();
-						isHeaderSent = true;
 					}
 
 					process.send(new Messenger(salt, "end"));
