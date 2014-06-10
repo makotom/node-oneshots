@@ -117,7 +117,6 @@
 
 			workerMessageReceptor = function (workerMes) {
 				if (workerMes.salt !== salt) {
-					// console.log(workerMes);
 					return;
 				}
 
@@ -152,11 +151,11 @@
 						break;
 
 					default:
-						// console.log(workerMes);
+						break;
 				}
 			};
 
-			res.stdout.conn.socket._destroy = quietSocketDestroy; 
+			res.stdout.conn.socket._destroy = quietSocketDestroy;
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
@@ -323,7 +322,7 @@
 			} catch (e) {
 				instanceInterface.setHeader("Status: 500");
 				instanceInterface.end();
-				// console.log(e);
+				cluster.worker.kill();
 			}
 		},
 
@@ -353,7 +352,7 @@
 					respondBalancerRequest(request);
 					break;
 				default:
-					// console.log(messenger);
+					break;
 			}
 		};
 
