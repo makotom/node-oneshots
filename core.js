@@ -86,6 +86,12 @@
 			return worker;
 		},
 
+		quietSocketDestroy = function (exception, cb) {
+			return Object.getPrototypeOf(this._destroy)(exception, cb !== undefined ? cb : function (e) {
+				// console.log(e);
+			});
+		},
+
 		responder = function (req, res) {
 			var salt = Math.random(),
 			requested = url.parse(req.cgiParams.SCRIPT_FILENAME.replace(/^[^:]*:fcgi:/, "fcgi:")),
@@ -150,7 +156,7 @@
 				}
 			};
 
-			res.stdout.conn.socket._write = require("./patch_socket.js")._write;
+			res.stdout.conn.socket._destroy = quietSocketDestroy; 
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
