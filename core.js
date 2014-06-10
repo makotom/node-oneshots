@@ -154,13 +154,13 @@
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
-			req.on("data", function (bodyChunk) {
+			req.on("data", function (bChunk) {
 				var messageContainer = new Messenger(salt, "body", null), p = 0;
 
-				while (p < bodyChunk.length) {
-					messageContainer.payload = bodyChunk.slice(
+				while (p < bChunk.length) {
+					messageContainer.payload = bChunk.slice(
 						p,
-						p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
+						p = p + CONFIG.messageCap < bChunk.length ? p + CONFIG.messageCap : bChunk.length
 					);
 					worker.send(messageContainer);
 				}
@@ -190,10 +190,17 @@
 		fs = require("fs"),
 
 		genInstanceInterface = function (request) {
-			var salt = request.salt,
+			var ret = {},
+
+			salt = request.salt,
 
 			responseHeaders = [],
 			isHeaderSent = false,
+
+			bCache = {
+				chunks : [],
+				cachedLength : 0
+			},
 
 			flushHeaders = function () {
 				var messageContainer = new ResponseHeaderMessenger(salt);
@@ -222,45 +229,77 @@
 				isHeaderSent = true;
 			};
 
-			return {
-				request : {
-					socket : request.header.socket,
-					header : request.header.http,
-					env : request.header.env,
-					body : Buffer.concat(request.body)
-				},
+			ret.request = {
+				socket : request.header.socket,
+				header : request.header.http,
+				env : request.header.env,
+				body : Buffer.concat(request.body.chunks, request.body.length)
+			};
 
-				setHeader : function (expr) {
-					responseHeaders.push(expr);
-				},
+			ret.setHeader = function (expr) {
+				responseHeaders.push(expr);
+			};
 
-				echo : function (data) {
-					isHeaderSent === false && flushHeaders();
+			ret.flush = function () {
+				var messageContainer = new Messenger(salt, "body", null),
+				bChunk = typeof bCache.chunks[0] === "string" ? bCache.chunks.join("") : Buffer.concat(bCache.chunks, bCache.chachedLength);
 
-					if (data === undefined || data === null || data.length === 0) {
-						return;
+				isHeaderSent === false && flushHeaders();
+
+				for (let p = 0; p < bChunk.length;) {
+					messageContainer.payload = bChunk.slice(
+						p,
+						p = p + CONFIG.messageCap < bChunk.length ? p + CONFIG.messageCap : bChunk.length
+					);
+					process.send(messageContainer);
+				}
+
+				bCache.chunks = [];
+				bCache.cachedLength = 0;
+			};
+
+			ret.echo = function(data) {
+				var toBeCached = null;
+
+				if (data === undefined || data === null || data.length === 0) {
+					return;
+				}
+
+				if (Buffer.isBuffer(data) === true) {
+					if (bCache.length > 0 && Buffer.isBuffer(bCache.chunks[0]) !== true) {
+						ret.flush();
 					}
 
-					{
-						let messageContainer = new Messenger(salt, "body", null),
-						bodyChunk = (Buffer.isBuffer(data) === true || typeof data === typeof "") ? data : data.toString();
-
-						for (let p = 0; p < bodyChunk.length;) {
-							messageContainer.payload = bodyChunk.slice(
-								p,
-								p = p + CONFIG.messageCap < bodyChunk.length ? p + CONFIG.messageCap : bodyChunk.length
-							);
-							process.send(messageContainer);
-						}
+					toBeCached = data;
+				} else {
+					if (bCache.length > 0 && typeof bCache.chunks[0] !== typeof "") {
+						ret.flush();
 					}
-				},
 
-				end : function () {
-					isHeaderSent === false && flushHeaders();
-					process.send(new Messenger(salt, "end"));
+					toBeCached = typeof data === typeof "" ? data : data.toString();
+				}
+
+				if (bCache.cachedLength + toBeCached.length > CONFIG.messageCap) {
+					ret.flush();
+				}
+
+				bCache.chunks.push(toBeCached);
+				bCache.cachedLength += toBeCached.length;
+
+				if (toBeCached.length > CONFIG.messageCap) {
+					ret.flush();
 				}
 			};
+
+			ret.end = function () {
+				isHeaderSent === false && flushHeaders();
+				ret.flush();
+				process.send(new Messenger(salt, "end"));
+			};
+
+			return ret;
 		},
+
 		respondBalancerRequest = function (request) {
 			var instanceInterface = genInstanceInterface(request);
 
@@ -281,18 +320,27 @@
 				// console.log(e);
 			}
 		},
+
 		balancerMessageReceptor = function (messenger) {
 			switch (messenger.type) {
 				case "header":
 					request = {
 						salt : messenger.salt,
 						header : messenger.payload,
-						body : []
+						body : {
+							length : 0,
+							chunks : []
+						}
 					};
 					break;
 
 				case "body":
-					messenger.salt === request.salt && request.body.push(new Buffer(messenger.payload));
+					if (messenger.salt === request.salt) {
+						let newBodyChunk = new Buffer(messenger.payload);
+
+						request.body.chunks.push(newBodyChunk);
+						request.body.length += newBodyChunk.length;
+					}
 					break;
 
 				case "end":
