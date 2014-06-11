@@ -87,9 +87,7 @@
 		},
 
 		quietSocketDestroy = function (exception, cb) {
-			return Object.getPrototypeOf(this._destroy)(exception, cb !== undefined ? cb : function (e) {
-				// console.log(e);
-			});
+			return Object.getPrototypeOf(this._destroy)(exception, cb !== undefined ? cb : function () {});
 		},
 
 		responder = function (req, res) {
