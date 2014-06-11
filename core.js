@@ -15,14 +15,12 @@
 	Messenger = function (salt, type, payload) {
 		var messageTypeRegex = /^(?:header|body|end)$/;
 
-		return {
-			salt : salt,
-			type : messageTypeRegex.test(type) === true ? type : "unknown",
-			payload : payload
-		};
+		this.salt = salt;
+		this.type = messageTypeRegex.test(type) === true ? type : "unknown";
+		this.payload = payload;
 	},
 	RequestHeaderMessenger = function (salt, invoking, req) {
-		return new Messenger(salt, "header", {
+		Messenger.call(this, salt, "header", {
 			invoking : invoking,
 			socket : {
 				remoteAddress : req.socket.remoteAddress,
@@ -40,11 +38,30 @@
 		});
 	},
 	ResponseHeaderMessenger = function (salt) {
-		return new Messenger(salt, "header", {
+		Messenger.call(this, salt, "header", {
 			statusCode : 200,
 			reasonPhrase : undefined,
 			headers : {}
 		});
+	},
+
+	quietSocketPatch = function (socket) {
+		var realWrite = socket._write,
+		realDestroy = socket._destroy;
+
+		socket._write = function (data, encoding, cb) {
+			try {
+				return ! socket.destroyed && realWrite.call(socket, data, encoding, cb);
+			} catch (e) {
+			}
+		};
+
+		socket._destroy = function (exception, cb) {
+			try {
+				return realDestroy.call(socket, exception, cb);
+			} catch (e) {
+			}
+		};
 	},
 
 	NodePool = function () {},
@@ -84,10 +101,6 @@
 			worker.isIdle = false;
 
 			return worker;
-		},
-
-		quietSocketDestroy = function (exception, cb) {
-			return Object.getPrototypeOf(this._destroy)(exception, cb !== undefined ? cb : function () {});
 		},
 
 		responder = function (req, res) {
@@ -153,7 +166,8 @@
 				}
 			};
 
-			res.stdout.conn.socket._destroy = quietSocketDestroy;
+			quietSocketPatch(res.socket);
+			quietSocketPatch(res.stdout.conn.socket);
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
