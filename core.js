@@ -22,46 +22,14 @@
 	RequestHeaderMessenger = function (salt, invoking, req) {
 		Messenger.call(this, salt, "header", {
 			invoking : invoking,
-			socket : {
-				remoteAddress : req.socket.remoteAddress,
-				remotePort : req.socket.remotePort,
-				localAddress : req.socket.localAddress,
-				localPort : req.socket.localPort
-			},
-			http : {
-				version : req.httpVersion,
-				method : req.method,
-				uri : req.url,
-				headers : req.headers
-			},
-			env : req.cgiParams
+			params : req.params
 		});
 	},
-	ResponseHeaderMessenger = function (salt) {
+	ResponseHeaderMessenger = function (salt, headers) {
 		Messenger.call(this, salt, "header", {
 			statusCode : 200,
-			reasonPhrase : undefined,
-			headers : {}
+			headers : headers
 		});
-	},
-
-	quietSocketPatch = function (socket) {
-		var realWrite = socket._write,
-		realDestroy = socket._destroy;
-
-		socket._write = function (data, encoding, cb) {
-			try {
-				return ! socket.destroyed && realWrite.call(socket, data, encoding, cb);
-			} catch (e) {
-			}
-		};
-
-		socket._destroy = function (exception, cb) {
-			try {
-				return realDestroy.call(socket, exception, cb);
-			} catch (e) {
-			}
-		};
 	},
 
 	NodePool = function () {},
@@ -69,7 +37,7 @@
 	cluster = require("cluster");
 
 	NodePool.prototype.balancer = function () {
-		var server = require("node-fastcgi").createServer(),
+		var server = require("./scgi.js").createServer(),
 
 		url = require("url"),
 
@@ -105,7 +73,7 @@
 
 		responder = function (req, res) {
 			var salt = Math.random(),
-			requested = url.parse(req.cgiParams.SCRIPT_FILENAME.replace(/^[^:]*:fcgi:/, "fcgi:")),
+			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^[^:]*:scgi:/, "scgi:")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
@@ -133,15 +101,15 @@
 
 				switch (workerMes.type) {
 					case "header":
-						if (typeof workerMes.payload.reasonPhrase === typeof "") {
-							res.writeHead(
-								workerMes.payload.statusCode,
-								workerMes.payload.reasonPhrase,
-								workerMes.payload.headers
-							);
-						} else {
-							res.writeHead(workerMes.payload.statusCode, workerMes.payload.headers);
+						if (! isNaN(workerMes.payload.statusCode)) {
+							res.setStatus(workerMes.payload.statusCode);
 						}
+
+						workerMes.payload.headers.forEach(function (header) {
+							res.setHeader(header);
+						});
+
+						res.flushHeaders();
 
 						clearTimeout(worker.timeout);
 						worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
@@ -155,7 +123,7 @@
 						break;
 
 					case "end":
-						setImmediate(scheduleEnd);
+						res.end();
 						clearTimeout(worker.timeout);
 						worker.removeListener("message", workerMessageReceptor);
 						worker.idle();
@@ -165,9 +133,6 @@
 						break;
 				}
 			};
-
-			quietSocketPatch(res.socket);
-			quietSocketPatch(res.stdout.conn.socket);
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
@@ -211,6 +176,7 @@
 
 			salt = request.salt,
 
+			responseStatus = NaN,
 			responseHeaders = [],
 			isHeaderSent = false,
 
@@ -220,37 +186,27 @@
 			},
 
 			flushHeaders = function () {
-				var messageContainer = new ResponseHeaderMessenger(salt);
+				var messageContainer = new ResponseHeaderMessenger(salt, responseHeaders);
 
-				responseHeaders.forEach(function (expr) {
-					var parts = expr.trim().split(":"), fieldName = parts.shift();
-
-					if (parts.length < 1) {
-						return;
-					}
-
-					if (/^Status$/i.test(fieldName) === true) {
-						let statusTerms = parts.join(":").trim().split(" ");
-
-						messageContainer.payload.statusCode = parseInt(statusTerms.shift(), 10);
-
-						if (statusTerms[0] !== undefined) {
-							messageContainer.payload.reasonPhrase = statusTerms.join(" ").toString();
-						}
-					} else {
-						messageContainer.payload.headers[fieldName] = parts.join(":");
-					}
-				});
+				if(! isNaN(responseStatus)) {
+					messageContainer.statusCode = responseStatus;
+				}
 
 				process.send(messageContainer);
 				isHeaderSent = true;
 			};
 
 			ret.request = {
-				socket : request.header.socket,
-				header : request.header.http,
-				env : request.header.env,
+				params : request.header.params,
 				body : Buffer.concat(request.body.chunks, request.body.length)
+			};
+
+			ret.setStatus = function (sCode, reasonPhrase) {
+				responseStatus = parseInt(sCode, 10);
+
+				if (reasonPhrase !== undefined) {
+					responseHeaders.push(["Status:", sCode.toString(), reasonPhrase].join(" "));
+				}
 			};
 
 			ret.setHeader = function (expr) {
@@ -332,7 +288,7 @@
 				instanceInterface.setHeader("Content-Type: text/html; charset=UTF-8");
 				built.exec(instanceInterface);
 			} catch (e) {
-				instanceInterface.setHeader("Status: 500");
+				instanceInterface.setStatus(500);
 				instanceInterface.end();
 				cluster.worker.kill();
 			}
