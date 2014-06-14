@@ -10,7 +10,7 @@
 	// Methods
 	createServer,
 	// Internal functions
-	defaultStatusPhrase, onConnection, onClientData, onClientError, onClientFin, onSocketTimeout, onSocketError, onSocketClose,
+	defaultStatusPhrase, onConnection, onClientData, onClientError, onClientFin, onSocketError, onSocketClose, onSocketTimeout,
 	// Internal values
 	CRLF = "\r\n", statusPhrases = [],
 
@@ -41,6 +41,8 @@
 
 		this.socket = socket;
 		this.params = {};
+
+		this.on("close", this.removeAllListeners);
 	};
 	util.inherits(ClientRequest, EE);
 	ClientRequest.prototype.setTimeout = function (timeoutAfter, callback) {
@@ -57,6 +59,9 @@
 		this.inBody = false;
 
 		this.setStatus(200);
+
+		this.on("close", this.removeAllListeners);
+		this.on("finish", this.removeAllListeners);
 	};
 	util.inherits(ServerResponse, EE);
 	ServerResponse.prototype.setStatus = function (sCode, reasonPhrase) {
@@ -117,9 +122,9 @@
 		socket.setTimeout(this.timeout);
 
 		socket.on("data", onClientData.bind(connection));
+		socket.on("error", onSocketError.bind(connection));
 		socket.on("end", onClientFin.bind(connection));
 		socket.on("close", onSocketClose.bind(connection));
-		socket.on("error", onSocketError.bind(connection));
 		socket.on("timeout", onSocketTimeout);
 	};
 
@@ -227,18 +232,16 @@
 		this.server.emit("clientError", e, this.socket);
 	};
 
-	onSocketTimeout = function () {
-		this.socket.end();
-		this.socket.destroy();
-	};
-
-	onSocketClose = function () {
+	onSocketClose = function (hadError) {
 		this.socket.removeAllListeners();
 
-		if (this.socket._writableState.ended === false) {
-			this.req.emit("close");
-			this.res.emit("close");
-		}
+		this.req.emit("close");
+		this.res.emit((hadError === false && this.socket._writableState.ended === true) ? "finish" : "close");
+	};
+
+	onSocketTimeout = function () {
+		this.end();
+		this.destroy();
 	};
 
 	statusPhrases[100] = "Continue";
