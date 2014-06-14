@@ -224,7 +224,7 @@
 
 	onClientFin = function () {
 		if (this.clientPhase < 2) {
-			this.server.emit("clientError", e, this.socket);
+			this.server.emit("clientError", new Error("Client FIN before request completes"), this.socket);
 		}
 	};
 
