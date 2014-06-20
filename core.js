@@ -71,6 +71,78 @@
 			return worker;
 		},
 
+		abortResponse = function () {
+			this.res.setStatus(408);
+			this.res.flushHeaders(true);
+			this.res.end();
+			this.worker.kill();
+		},
+
+		workerMessageReceptor = function (workerMes) {
+			var res = this.res, worker = this.worker;
+
+			if (workerMes.salt !== this.salt) {
+				return;
+			}
+
+			switch (workerMes.type) {
+				case "header":
+					if (! isNaN(workerMes.payload.statusCode)) {
+						res.setStatus(workerMes.payload.statusCode);
+					}
+
+					workerMes.payload.headers.forEach(function (header) {
+						res.setHeader(header);
+					});
+
+					res.flushHeaders();
+
+					clearTimeout(worker.timeout);
+					worker.timeout = setTimeout(this.aborter, CONFIG.workersTimeout * 1000);
+
+					break;
+
+				case "body":
+					res.write(new Buffer(workerMes.payload));
+					clearTimeout(worker.timeout);
+					worker.timeout = setTimeout(this.aborter, CONFIG.workersTimeout * 1000);
+					break;
+
+				case "end":
+					res.end();
+					clearTimeout(worker.timeout);
+					worker.removeListener("message", this.workerMessageReceiver);
+					worker.idle();
+					break;
+
+				default:
+					break;
+			}
+		},
+
+		onReqData = function (bChunk) {
+			var messageContainer = new Messenger(this.salt, "body", null), p = 0;
+
+			while (p < bChunk.length) {
+				messageContainer.payload = bChunk.slice(
+					p,
+					p = p + CONFIG.messageCap < bChunk.length ? p + CONFIG.messageCap : bChunk.length
+				);
+				this.worker.send(messageContainer);
+			}
+		},
+
+		onReqEnd = function () {
+			this.worker.send(new Messenger(this.salt, "end"));
+			this.worker.on("message", this.workerMessageReceiver);
+			this.worker.timeout = setTimeout(this.aborter, CONFIG.workersTimeout * 1000);
+		},
+
+		onResClose = function () {
+			clearTimeout(this.worker.timeout);
+			this.worker.kill();
+		},
+
 		responder = function (req, res) {
 			var salt = Math.random(),
 			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^[^:]*:scgi:/, "scgi:")),
@@ -78,86 +150,20 @@
 
 			worker = invokeWorker(invoking),
 
-			scheduleEnd = function () {
-				if (res.stdout._writableState.buffer.length > 0) {
-					res.stdout.on("drain", scheduleEnd);
-					return;
-				}
-
-				setImmediate(function () {
-					res.end();
-				});
-			},
-
-			abortWorker = function () {
-				setImmediate(scheduleEnd);
-				worker.kill();
-			},
-
-			workerMessageReceptor = function (workerMes) {
-				if (workerMes.salt !== salt) {
-					return;
-				}
-
-				switch (workerMes.type) {
-					case "header":
-						if (! isNaN(workerMes.payload.statusCode)) {
-							res.setStatus(workerMes.payload.statusCode);
-						}
-
-						workerMes.payload.headers.forEach(function (header) {
-							res.setHeader(header);
-						});
-
-						res.flushHeaders();
-
-						clearTimeout(worker.timeout);
-						worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
-
-						break;
-
-					case "body":
-						res.write(new Buffer(workerMes.payload));
-						clearTimeout(worker.timeout);
-						worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
-						break;
-
-					case "end":
-						res.end();
-						clearTimeout(worker.timeout);
-						worker.removeListener("message", workerMessageReceptor);
-						worker.idle();
-						break;
-
-					default:
-						break;
-				}
+			resources = {
+				salt : salt,
+				res : res,
+				worker : worker
 			};
+
+			resources.workerMessageReceiver = workerMessageReceptor.bind(resources);
+			resources.aborter = abortResponse.bind(resources);
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
-			req.on("data", function (bChunk) {
-				var messageContainer = new Messenger(salt, "body", null), p = 0;
-
-				while (p < bChunk.length) {
-					messageContainer.payload = bChunk.slice(
-						p,
-						p = p + CONFIG.messageCap < bChunk.length ? p + CONFIG.messageCap : bChunk.length
-					);
-					worker.send(messageContainer);
-				}
-			});
-
-			req.on("end", function () {
-				worker.send(new Messenger(salt, "end"));
-				worker.on("message", workerMessageReceptor);
-				worker.timeout = setTimeout(abortWorker, CONFIG.workersTimeout * 1000);
-			});
-
-			res.on("close", function () {
-				clearTimeout(worker.timeout);
-				worker.kill();
-			});
+			req.on("data", onReqData.bind(resources));
+			req.on("end", onReqEnd.bind(resources));
+			res.on("close", onResClose.bind(resources));
 		};
 
 		CONFIG.listenIPv4 && server.listen(CONFIG.servicePort, "0.0.0.0");
