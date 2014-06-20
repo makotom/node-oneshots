@@ -52,11 +52,18 @@
 	};
 
 	ServerResponse = function (socket) {
+		var headerInfo = {
+			fields : {},
+			fieldQueue : [],
+			inBody : false
+		};
+
 		EE.call(this);
 
 		this.socket = socket;
-		this.headers = [];
-		this.inBody = false;
+
+		this.setHeader = ServerResponse.prototype.setHeader.bind(this, headerInfo);
+		this.flushHeaders = ServerResponse.prototype.flushHeaders.bind(this, headerInfo);
 
 		this.setStatus(200);
 
@@ -65,32 +72,45 @@
 	};
 	util.inherits(ServerResponse, EE);
 	ServerResponse.prototype.setStatus = function (sCode, reasonPhrase) {
-		this.headers.push(["Status:", sCode.toString(), reasonPhrase !== undefined ? reasonPhrase : defaultStatusPhrase(sCode)].join(" "));
+		this.setHeader(["Status:", sCode.toString(), reasonPhrase !== undefined ? reasonPhrase : defaultStatusPhrase(sCode)].join(" "));
 	};
-	ServerResponse.prototype.setHeader = function (headerStatement) {
-		this.headers.push(headerStatement.trim());
+	ServerResponse.prototype.setHeader = function (headerInfo, headerStatement) {
+		var fieldName = headerStatement.split(":").shift().toLowerCase(),
+		queued = headerInfo.fieldQueue.indexOf(fieldName);
+
+		headerInfo.fields[fieldName] = headerStatement.trim();
+
+		if (queued >= 0) {
+			headerInfo.fieldQueue.splice(queued, 1);
+		}
+		headerInfo.fieldQueue.push(fieldName);
 	};
-	ServerResponse.prototype.flushHeaders = function () {
-		if (this.socket.writable !== true) {
+	ServerResponse.prototype.flushHeaders = function (headerInfo, finalizeHeader) {
+		var socket = this.socket;
+
+		if (socket.writable !== true || headerInfo.inBody === true) {
 			return;
 		}
 
-		if (this.headers.length > 0 && this.inBody === false) {
-			this.socket.write(this.headers.join(CRLF) + CRLF);
+		if (headerInfo.fieldQueue.length > 0) {
+			headerInfo.fieldQueue.forEach(function (field) {
+				socket.write(headerInfo.fields[field] + CRLF);
+			});
 		}
-		this.headers = [];
+		headerInfo.fields = {};
+		headerInfo.fieldQueue = [];
+
+		if (finalizeHeader === true) {
+			socket.write(CRLF);
+			headerInfo.inBody = true;
+		}
 	};
 	ServerResponse.prototype.write = function (data) {
 		if (this.socket.writable !== true) {
 			return;
 		}
 
-		if (this.inBody === false) {
-			this.flushHeaders();
-			this.socket.write(CRLF);
-		}
-		this.inBody = true;
-
+		this.flushHeaders(true);
 		this.socket.write(data);
 	};
 	ServerResponse.prototype.end = function () {
