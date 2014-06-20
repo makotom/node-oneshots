@@ -46,6 +46,8 @@
 	};
 	util.inherits(ClientRequest, EE);
 	ClientRequest.prototype.setTimeout = function (timeoutAfter, callback) {
+		this.socket.setTimeout(timeoutAfter);
+
 		if (callback !== undefined) {
 			this.socket.on("timeout", callback);
 		}
@@ -148,7 +150,7 @@
 		socket.on("error", onSocketError.bind(connection));
 		socket.on("end", onClientFin.bind(connection));
 		socket.on("close", onSocketClose.bind(connection));
-		socket.on("timeout", onSocketTimeout);
+		socket.on("timeout", onSocketTimeout.bind(connection));
 	};
 
 	onClientData = function (data) {
@@ -263,8 +265,9 @@
 	};
 
 	onSocketTimeout = function () {
-		this.end();
-		this.destroy();
+		this.server.emit("timeout");
+		process.nextTick(this.socket.end.bind(this.socket));
+		process.nextTick(this.socket.destroy.bind(this.socket));
 	};
 
 	statusPhrases[100] = "Continue";
