@@ -12,7 +12,7 @@
 	// Internal functions
 	defaultStatusPhrase, onConnection, onClientData, onClientError, onClientFin, onSocketError, onSocketClose, onSocketTimeout,
 	// Internal values
-	CRLF = "\r\n", statusPhrases = [],
+	CRLF = "\r\n", wellknownStatuses = require("./http_status.js").IANAStatuses,
 
 	EE = require("events").EventEmitter, net = require("net"), util = require("util");
 
@@ -127,7 +127,7 @@
 	};
 
 	defaultStatusPhrase = function (sCode) {
-		return statusPhrases[sCode] !== undefined ? statusPhrases[sCode] : [sCode.toString(), "Unknown Reason"].join(" ");
+		return wellknownStatuses[sCode] !== undefined ? wellknownStatuses[sCode] : [sCode.toString(), "Unknown Reason"].join(" ");
 	};
 
 	createServer = function (requestListener) {
@@ -269,63 +269,6 @@
 		process.nextTick(this.socket.end.bind(this.socket));
 		process.nextTick(this.socket.destroy.bind(this.socket));
 	};
-
-	statusPhrases[100] = "Continue";
-	statusPhrases[101] = "Switching Protocols";
-	statusPhrases[102] = "Processing";	// RFC 2518, obsoleted by RFC 4918
-	statusPhrases[200] = "OK";
-	statusPhrases[201] = "Created";
-	statusPhrases[202] = "Accepted";
-	statusPhrases[203] = "Non-Authoritative Information";
-	statusPhrases[204] = "No Content";
-	statusPhrases[205] = "Reset Content";
-	statusPhrases[206] = "Partial Content";
-	statusPhrases[207] = "Multi-Status";	// RFC 4918
-	statusPhrases[300] = "Multiple Choices";
-	statusPhrases[301] = "Moved Permanently";
-	statusPhrases[302] = "Moved Temporarily";
-	statusPhrases[303] = "See Other";
-	statusPhrases[304] = "Not Modified";
-	statusPhrases[305] = "Use Proxy";
-	statusPhrases[307] = "Temporary Redirect";
-	statusPhrases[400] = "Bad Request";
-	statusPhrases[401] = "Unauthorized";
-	statusPhrases[402] = "Payment Required";
-	statusPhrases[403] = "Forbidden";
-	statusPhrases[404] = "Not Found";
-	statusPhrases[405] = "Method Not Allowed";
-	statusPhrases[406] = "Not Acceptable";
-	statusPhrases[407] = "Proxy Authentication Required";
-	statusPhrases[408] = "Request Time-out";
-	statusPhrases[409] = "Conflict";
-	statusPhrases[410] = "Gone";
-	statusPhrases[411] = "Length Required";
-	statusPhrases[412] = "Precondition Failed";
-	statusPhrases[413] = "Request Entity Too Large";
-	statusPhrases[414] = "Request-URI Too Large";
-	statusPhrases[415] = "Unsupported Media Type";
-	statusPhrases[416] = "Requested Range Not Satisfiable";
-	statusPhrases[417] = "Expectation Failed";
-	statusPhrases[418] = "I'm a teapot";	// RFC 2324
-	statusPhrases[422] = "Unprocessable Entity";	// RFC 4918
-	statusPhrases[423] = "Locked";	// RFC 4918
-	statusPhrases[424] = "Failed Dependency";	// RFC 4918
-	statusPhrases[425] = "Unordered Collection";	// RFC 4918
-	statusPhrases[426] = "Upgrade Required";	// RFC 2817
-	statusPhrases[428] = "Precondition Required";	// RFC 6585
-	statusPhrases[429] = "Too Many Requests";	// RFC 6585
-	statusPhrases[431] = "Request Header Fields Too Large";// RFC 6585
-	statusPhrases[500] = "Internal Server Error";
-	statusPhrases[501] = "Not Implemented";
-	statusPhrases[502] = "Bad Gateway";
-	statusPhrases[503] = "Service Unavailable";
-	statusPhrases[504] = "Gateway Time-out";
-	statusPhrases[505] = "HTTP Version Not Supported";
-	statusPhrases[506] = "Variant Also Negotiates";	// RFC 2295
-	statusPhrases[507] = "Insufficient Storage";	// RFC 4918
-	statusPhrases[509] = "Bandwidth Limit Exceeded";
-	statusPhrases[510] = "Not Extended";	// RFC 2774
-	statusPhrases[511] = "Network Authentication Required"	// RFC 6585
 
 	// Exporting
 	exports.Server = Server;
