@@ -78,6 +78,10 @@
 		var fieldName = headerStatement.split(":").shift().toLowerCase(),
 		queued = headerInfo.fieldQueue.indexOf(fieldName);
 
+		if (headerInfo.fields[fieldName] !== undefined && queued === -1) {
+			return;
+		}
+
 		headerInfo.fields[fieldName] = headerStatement.trim();
 
 		if (queued >= 0) {
@@ -97,7 +101,6 @@
 				socket.write(headerInfo.fields[field] + CRLF);
 			});
 		}
-		headerInfo.fields = {};
 		headerInfo.fieldQueue = [];
 
 		if (finalizeHeader === true) {
