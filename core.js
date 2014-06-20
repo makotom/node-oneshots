@@ -7,7 +7,7 @@
 		listenIPv4 : true,
 		listenIPv6 : true,
 		servicePort : 37320,
-		workersKeepIdle : 3600,	// Unit: second
+		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageCap : 1024 * 16	// Unit: octet
 	},
@@ -42,13 +42,10 @@
 		url = require("url"),
 
 		idleWorker = function () {
-			var self = this;
-
-			self.isIdle = true;
-			self.stopIdling = setTimeout(function () {
-				self.kill();
-			}, CONFIG.workersKeepIdle * 1000);
+			this.isIdle = true;
+			this.stopIdling = setTimeout(this.kill.bind(this), CONFIG.workersKeepIdle * 1000);
 		},
+
 		invokeWorker = function (path) {
 			var worker = null;
 
@@ -71,7 +68,7 @@
 			return worker;
 		},
 
-		abortResponse = function () {
+		timeoutResponse = function () {
 			this.res.setStatus(408);
 			this.res.flushHeaders(true);
 			this.res.end();
@@ -97,20 +94,14 @@
 
 					res.flushHeaders();
 
-					clearTimeout(worker.timeout);
-					worker.timeout = setTimeout(this.aborter, CONFIG.workersTimeout * 1000);
-
 					break;
 
 				case "body":
 					res.write(new Buffer(workerMes.payload));
-					clearTimeout(worker.timeout);
-					worker.timeout = setTimeout(this.aborter, CONFIG.workersTimeout * 1000);
 					break;
 
 				case "end":
 					res.end();
-					clearTimeout(worker.timeout);
 					worker.removeListener("message", this.workerMessageReceiver);
 					worker.idle();
 					break;
@@ -135,11 +126,9 @@
 		onReqEnd = function () {
 			this.worker.send(new Messenger(this.salt, "end"));
 			this.worker.on("message", this.workerMessageReceiver);
-			this.worker.timeout = setTimeout(this.aborter, CONFIG.workersTimeout * 1000);
 		},
 
 		onResClose = function () {
-			clearTimeout(this.worker.timeout);
 			this.worker.kill();
 		},
 
@@ -157,13 +146,14 @@
 			};
 
 			resources.workerMessageReceiver = workerMessageReceptor.bind(resources);
-			resources.aborter = abortResponse.bind(resources);
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
 			req.on("data", onReqData.bind(resources));
 			req.on("end", onReqEnd.bind(resources));
 			res.on("close", onResClose.bind(resources));
+
+			req.setTimeout(CONFIG.workersTimeout * 1000, timeoutResponse.bind(resources));
 		};
 
 		CONFIG.listenIPv4 && server.listen(CONFIG.servicePort, "0.0.0.0");
