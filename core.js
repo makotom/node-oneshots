@@ -185,7 +185,7 @@
 				var messageContainer = new ResponseHeaderMessenger(salt, responseHeaders);
 
 				if(! isNaN(responseStatus)) {
-					messageContainer.statusCode = responseStatus;
+					messageContainer.payload.statusCode = responseStatus;
 				}
 
 				process.send(messageContainer);
