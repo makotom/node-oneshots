@@ -141,7 +141,7 @@
 
 		responder = function (req, res) {
 			var salt = Math.random(),
-			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^[^:]*:scgi:/, "scgi:")),
+			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^proxy:scgi:/, "scgi:")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
