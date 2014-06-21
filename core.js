@@ -7,6 +7,7 @@
 		listenIPv4 : true,
 		listenIPv6 : true,
 		servicePort : 37320,
+		workersMaxNum : 256,
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageCap : 1024 * 16	// Unit: octet
@@ -47,9 +48,11 @@
 		},
 
 		invokeWorker = function (path) {
-			var worker = null;
+			var worker = null, numOfActiveWorkers = 0;
 
 			for (let workerId in cluster.workers) {
+				numOfActiveWorkers += 1;
+
 				if (cluster.workers[workerId].workFor === path && cluster.workers[workerId].isIdle === true) {
 					worker = cluster.workers[workerId];
 					clearTimeout(cluster.workers[workerId].stopIdling);
@@ -58,6 +61,10 @@
 			}
 
 			if (worker === null) {
+				if (numOfActiveWorkers >= CONFIG.workersMaxNum) {
+					return null;
+				}
+
 				worker = cluster.fork();
 				worker.workFor = path;
 				worker.idle = idleWorker;
@@ -66,13 +73,6 @@
 			worker.isIdle = false;
 
 			return worker;
-		},
-
-		timeoutResponse = function () {
-			this.res.setStatus(408);
-			this.res.flushHeaders(true);
-			this.res.end();
-			this.worker.kill();
 		},
 
 		workerMessageReceptor = function (workerMes) {
@@ -132,6 +132,13 @@
 			this.worker.kill();
 		},
 
+		timeoutResponse = function () {
+			this.res.setStatus(408);
+			this.res.flushHeaders(true);
+			this.res.end();
+			this.worker.kill();
+		},
+
 		responder = function (req, res) {
 			var salt = Math.random(),
 			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^[^:]*:scgi:/, "scgi:")),
@@ -144,6 +151,13 @@
 				res : res,
 				worker : worker
 			};
+
+			if (worker === null) {
+				res.setStatus(503);
+				res.flushHeaders(true);
+				res.end();
+				return;
+			}
 
 			resources.workerMessageReceiver = workerMessageReceptor.bind(resources);
 
