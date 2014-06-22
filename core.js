@@ -7,7 +7,7 @@
 		listenIPv4 : true,
 		listenIPv6 : true,
 		servicePort : 37320,
-		workersMaxNum : 256,
+		workersMaxNum : 64,
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageCap : 1024 * 16	// Unit: octet
@@ -134,7 +134,7 @@
 
 		timeoutResponse = function () {
 			this.res.setStatus(408);
-			this.res.flushHeaders(true);
+			this.res.write("Timed out.");
 			this.res.end();
 			this.worker.kill();
 		},
@@ -154,7 +154,7 @@
 
 			if (worker === null) {
 				res.setStatus(503);
-				res.flushHeaders(true);
+				res.write("No vacancy for your request.");
 				res.end();
 				return;
 			}
