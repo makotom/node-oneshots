@@ -299,6 +299,7 @@
 				built.exec(instanceInterface);
 			} catch (e) {
 				instanceInterface.setStatus(500);
+				instanceInterface.echo("Error during script execution.");
 				instanceInterface.end();
 				cluster.worker.kill();
 			}
