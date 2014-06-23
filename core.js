@@ -226,11 +226,11 @@
 			ret.request = {
 				params : request.header.params,
 				body : Buffer.concat(request.body.chunks, request.body.length),
-				meta : {}
+				formData : {}
 			};
 
-			ret.request.meta.GET = parseStr(request.header.params.QUERY_STRING || "");
-			ret.request.meta.POST = parseStr(request.header.params.CONTENT_TYPE === "application/x-www-form-urlencoded" ? ret.request.body.toString() : "");
+			ret.request.formData.GET = parseStr(request.header.params.QUERY_STRING || "");
+			ret.request.formData.POST = parseStr(request.header.params.REQUEST_METHOD.toUpperCase() === "POST" && request.header.params.CONTENT_TYPE.toLowerCase() === "application/x-www-form-urlencoded" ? ret.request.body.toString() : "");
 
 			ret.setStatus = function (sCode, reasonPhrase) {
 				responseStatus = parseInt(sCode, 10);
