@@ -181,6 +181,23 @@
 
 		fs = require("fs"),
 
+		parseStr = function (str) {
+			var ret = {};
+
+			str.toString().split("&").forEach(function (term) {
+				var eqSplit = term.split("="),
+				fieldName = decodeURIComponent(eqSplit.shift());
+
+				if (fieldName === "") {
+					return;
+				}
+
+				ret[fieldName] = decodeURIComponent(eqSplit.join("="));
+			});
+
+			return ret;
+		},
+
 		genInstanceInterface = function (request) {
 			var ret = {},
 
@@ -208,8 +225,12 @@
 
 			ret.request = {
 				params : request.header.params,
-				body : Buffer.concat(request.body.chunks, request.body.length)
+				body : Buffer.concat(request.body.chunks, request.body.length),
+				meta : {}
 			};
+
+			ret.request.meta.GET = parseStr(request.header.params.QUERY_STRING || "");
+			ret.request.meta.POST = parseStr(request.header.params.CONTENT_TYPE === "application/x-www-form-urlencoded" ? ret.request.body.toString() : "");
 
 			ret.setStatus = function (sCode, reasonPhrase) {
 				responseStatus = parseInt(sCode, 10);
