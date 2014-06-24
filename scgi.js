@@ -265,7 +265,7 @@
 	};
 
 	onSocketTimeout = function () {
-		this.server.emit("timeout");
+		this.server.emit("timeout", this.req);
 		process.nextTick(this.socket.end.bind(this.socket));
 		process.nextTick(this.socket.destroy.bind(this.socket));
 	};
