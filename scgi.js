@@ -118,7 +118,9 @@
 		this.flushHeaders(true);
 		this.socket.write(data);
 	};
-	ServerResponse.prototype.end = function () {
+	ServerResponse.prototype.end = function (data) {
+		data !== undefined && this.write(data);
+
 		if (this.socket._writableState.writing === false) {
 			this.socket.end();
 		} else {
