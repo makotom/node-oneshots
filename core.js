@@ -10,6 +10,7 @@
 		workersMaxNum : 64,
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
+		messageExpiry : 500,	// Unit: millisecond
 		messageCap : 1024 * 16	// Unit: octet
 	},
 
@@ -92,8 +93,6 @@
 						res.setHeader(header);
 					});
 
-					res.flushHeaders();
-
 					break;
 
 				case "body":
@@ -103,6 +102,7 @@
 				case "end":
 					res.end();
 					worker.removeListener("message", this.workerMessageReceiver);
+					worker.removeListener("exit", this.workerAbendNotifier);
 					worker.idle();
 					break;
 
@@ -130,6 +130,11 @@
 
 		onResClose = function () {
 			this.worker.kill();
+		},
+
+		onWorkerAbend = function () {
+			this.res.setStatus(500);
+			this.res.end();
 		},
 
 		timeoutResponse = function () {
@@ -160,12 +165,15 @@
 			}
 
 			resources.workerMessageReceiver = workerMessageReceptor.bind(resources);
+			resources.workerAbendNotifier = onWorkerAbend.bind(resources);
 
 			worker.send(new RequestHeaderMessenger(salt, invoking, req));
 
 			req.on("data", onReqData.bind(resources));
 			req.on("end", onReqEnd.bind(resources));
 			res.on("close", onResClose.bind(resources));
+
+			worker.on("exit", resources.workerAbendNotifier);
 
 			req.setTimeout(CONFIG.workersTimeout * 1000, timeoutResponse.bind(resources));
 		};
@@ -209,7 +217,8 @@
 
 			bCache = {
 				chunks : [],
-				cachedLength : 0
+				cachedLength : 0,
+				autoFlush : null
 			},
 
 			flushHeaders = function () {
@@ -248,6 +257,8 @@
 				var messageContainer = new Messenger(salt, "body", null),
 				bChunk = typeof bCache.chunks[0] === "string" ? bCache.chunks.join("") : Buffer.concat(bCache.chunks, bCache.chachedLength);
 
+				clearTimeout(bCache.autoFlush);
+
 				isHeaderSent === false && flushHeaders();
 
 				for (let p = 0; p < bChunk.length;) {
@@ -260,6 +271,7 @@
 
 				bCache.chunks = [];
 				bCache.cachedLength = 0;
+				bCache.autoFlush = setTimeout(ret.flush, CONFIG.messageExpiry);
 			};
 
 			ret.echo = function(data) {
@@ -296,10 +308,12 @@
 			};
 
 			ret.end = function () {
-				isHeaderSent === false && flushHeaders();
 				ret.flush();
+				clearTimeout(bCache.autoFlush);
 				process.send(new Messenger(salt, "end"));
 			};
+
+			bCache.autoFlush = setTimeout(ret.flush, CONFIG.messageExpiry);
 
 			return ret;
 		},
