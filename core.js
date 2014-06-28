@@ -257,7 +257,7 @@
 				var messageContainer = new Messenger(salt, "body", null),
 				bChunk = typeof bCache.chunks[0] === "string" ? bCache.chunks.join("") : Buffer.concat(bCache.chunks, bCache.chachedLength);
 
-				clearTimeout(bCache.autoFlush);
+				bCache.autoFlush !== null && clearTimeout(bCache.autoFlush);
 
 				isHeaderSent === false && flushHeaders();
 
@@ -276,6 +276,8 @@
 
 			ret.echo = function(data) {
 				var toBeCached = null;
+
+				isHeaderSent === false && flushHeaders();
 
 				if (data === undefined || data === null || data.length === 0) {
 					return;
@@ -304,6 +306,8 @@
 
 				if (toBeCached.length > CONFIG.messageCap) {
 					ret.flush();
+				} else if (bCache.autoFlush === null) {
+					bCache.autoFlush = setTimeout(ret.flush, CONFIG.messageExpiry);
 				}
 			};
 
@@ -312,8 +316,6 @@
 				clearTimeout(bCache.autoFlush);
 				process.send(new Messenger(salt, "end"));
 			};
-
-			bCache.autoFlush = setTimeout(ret.flush, CONFIG.messageExpiry);
 
 			return ret;
 		},
