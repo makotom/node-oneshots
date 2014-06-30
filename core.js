@@ -34,11 +34,11 @@
 		});
 	},
 
-	NodePool = function () {},
+	NodeOneShots = function () {},
 
 	cluster = require("cluster");
 
-	NodePool.prototype.balancer = function () {
+	NodeOneShots.prototype.balancer = function () {
 		var server = require("./scgi.js").createServer(),
 
 		url = require("url"),
@@ -184,7 +184,7 @@
 		server.on("request", responder);
 	};
 
-	NodePool.prototype.worker = function () {
+	NodeOneShots.prototype.worker = function () {
 		var built = null, request = null,
 
 		fs = require("fs"),
@@ -378,8 +378,8 @@
 	process.setuid(CONFIG.serverUid) && process.setgid(CONFIG.serverGid);
 
 	if (cluster.isMaster === true) {
-		new NodePool().balancer();
+		new NodeOneShots().balancer();
 	} else if (cluster.isWorker === true) {
-		new NodePool().worker();
+		new NodeOneShots().worker();
 	}
 })();
