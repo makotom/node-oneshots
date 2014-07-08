@@ -11,7 +11,7 @@
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageExpiry : 500,	// Unit: millisecond
-		messageCap : 1024 * 16	// Unit: octet
+		messageCap : 1024 * 32	// Unit: octet
 	},
 
 	Messenger = function (salt, type, payload) {
@@ -271,7 +271,7 @@
 
 				bCache.chunks = [];
 				bCache.cachedLength = 0;
-				bCache.autoFlush = setTimeout(ret.flush, CONFIG.messageExpiry);
+				bCache.autoFlush = null;
 			};
 
 			ret.echo = function(data) {
@@ -313,7 +313,6 @@
 
 			ret.end = function () {
 				ret.flush();
-				clearTimeout(bCache.autoFlush);
 				process.send(new Messenger(salt, "end"));
 			};
 
