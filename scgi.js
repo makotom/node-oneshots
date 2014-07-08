@@ -57,7 +57,6 @@
 		var headerInfo = {
 			fields : {},
 			fieldQueue : [],
-			inBody : false
 		};
 
 		EE.call(this);
@@ -73,6 +72,7 @@
 		this.on("finish", this.removeAllListeners);
 	};
 	util.inherits(ServerResponse, EE);
+	ServerResponse.prototype.headerFinalized = false;
 	ServerResponse.prototype.setStatus = function (sCode, reasonPhrase) {
 		this.setHeader(["Status:", sCode.toString(), reasonPhrase !== undefined ? reasonPhrase : defaultStatusPhrase(sCode)].join(" "));
 	};
@@ -94,7 +94,7 @@
 	ServerResponse.prototype.flushHeaders = function (headerInfo, finalizeHeader) {
 		var socket = this.socket;
 
-		if (socket.writable !== true || headerInfo.inBody === true) {
+		if (socket.writable !== true || this.headerFinalized === true) {
 			return;
 		}
 
@@ -107,7 +107,7 @@
 
 		if (finalizeHeader === true) {
 			socket.write(CRLF);
-			headerInfo.inBody = true;
+			this.headerFinalized = true;
 		}
 	};
 	ServerResponse.prototype.write = function (data) {
@@ -115,7 +115,7 @@
 			return;
 		}
 
-		this.flushHeaders(true);
+		this.headerFinalized !== true && this.flushHeaders(true);
 		this.socket.write(data);
 	};
 	ServerResponse.prototype.end = function (data) {
