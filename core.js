@@ -1,3 +1,5 @@
+// Copyright (C) 2014 Makoto Mizukami
+
 (function () {
 	"use strict";
 
