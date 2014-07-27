@@ -328,7 +328,10 @@
 				process.chdir(require("path").dirname(fs.realpathSync(request.header.invoking)));
 
 				if (built === null || fs.statSync(request.header.invoking).ctime.getTime() > built.builtAt.getTime()) {
-					delete require.cache[fs.realpathSync(request.header.invoking)];
+					for (let cachedPath in require.cache) {
+						delete require.cache[cachedPath];
+					}
+
 					built = require(request.header.invoking);
 					built.builtAt = new Date();
 				}
