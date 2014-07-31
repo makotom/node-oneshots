@@ -1,4 +1,4 @@
-node-oneshots
-=============
+nodebed
+=======
 
-Server-side JavaScript scriptlet server
+Server-side JavaScript scriptlet server for Node.js

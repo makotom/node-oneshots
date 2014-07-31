@@ -1,0 +1,10 @@
+[Unit]
+Description=nodebed: Server-side JavaScript scriptlet server for Node.js
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node --harmony /usr/local/lib/nodebed/core.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

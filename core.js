@@ -36,11 +36,11 @@
 		});
 	},
 
-	NodeOneShots = function () {},
+	Nodebed = function () {},
 
 	cluster = require("cluster");
 
-	NodeOneShots.prototype.balancer = function () {
+	Nodebed.prototype.balancer = function () {
 		var server = require("./scgi.js").createServer(),
 
 		url = require("url"),
@@ -186,7 +186,7 @@
 		server.on("request", responder);
 	};
 
-	NodeOneShots.prototype.worker = function () {
+	Nodebed.prototype.worker = function () {
 		var built = null, request = null,
 
 		fs = require("fs"),
@@ -382,8 +382,8 @@
 	process.setuid(CONFIG.serverUid) && process.setgid(CONFIG.serverGid);
 
 	if (cluster.isMaster === true) {
-		new NodeOneShots().balancer();
+		new Nodebed().balancer();
 	} else if (cluster.isWorker === true) {
-		new NodeOneShots().worker();
+		new Nodebed().worker();
 	}
 })();
