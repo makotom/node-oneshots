@@ -339,6 +339,7 @@
 				instanceInterface.setHeader("Content-Type: text/html; charset=UTF-8");
 				built.exec(instanceInterface);
 			} catch (e) {
+				console.log(e.stack);
 				instanceInterface.setStatus(500);
 				instanceInterface.echo("Error during script execution.");
 				instanceInterface.end();
