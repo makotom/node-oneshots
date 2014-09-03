@@ -321,19 +321,33 @@
 			return ret;
 		},
 
+		buildRequestedScript = function (invoking) {
+			built = require(invoking);
+			built.builtAt = new Date();
+		},
+
 		respondBalancerRequest = function (request) {
 			var instanceInterface = genInstanceInterface(request);
 
 			try {
 				process.chdir(require("path").dirname(fs.realpathSync(request.header.invoking)));
 
-				if (built === null || fs.statSync(request.header.invoking).ctime.getTime() > built.builtAt.getTime()) {
-					for (let cachedPath in require.cache) {
-						delete require.cache[cachedPath];
-					}
+				if (built === null) {
+					buildRequestedScript(request.header.invoking);
+				} else {
+					for (let cachedHash in require.cache) {
+						let cached = require.cache[cachedHash];
 
-					built = require(request.header.invoking);
-					built.builtAt = new Date();
+						if (fs.statSync(cached.filename).ctime.getTime() > built.builtAt.getTime()) {
+							for (let cachedHash in require.cache) {
+								delete require.cache[cachedHash];
+							}
+
+							buildRequestedScript(request.header.invoking);
+
+							break;
+						}
+					}
 				}
 
 				instanceInterface.setHeader("Content-Type: text/html; charset=UTF-8");
