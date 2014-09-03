@@ -54,12 +54,14 @@
 			var worker = null, numOfActiveWorkers = 0;
 
 			for (let workerId in cluster.workers) {
-				numOfActiveWorkers += 1;
+				if (cluster.workers.hasOwnProperty(workerId)) {
+					numOfActiveWorkers += 1;
 
-				if (cluster.workers[workerId].workFor === path && cluster.workers[workerId].isIdle === true) {
-					worker = cluster.workers[workerId];
-					clearTimeout(cluster.workers[workerId].stopIdling);
-					break;
+					if (cluster.workers[workerId].workFor === path && cluster.workers[workerId].isIdle === true) {
+						worker = cluster.workers[workerId];
+						clearTimeout(cluster.workers[workerId].stopIdling);
+						break;
+					}
 				}
 			}
 
@@ -336,16 +338,20 @@
 					buildRequestedScript(request.header.invoking);
 				} else {
 					for (let cachedHash in require.cache) {
-						let cached = require.cache[cachedHash];
+						if (require.cache.hasOwnProperty(cachedHash)) {
+							let cached = require.cache[cachedHash];
 
-						if (fs.statSync(cached.filename).ctime.getTime() > built.builtAt.getTime()) {
-							for (let cachedHash in require.cache) {
-								delete require.cache[cachedHash];
+							if (fs.statSync(cached.filename).ctime.getTime() > built.builtAt.getTime()) {
+								for (let cachedHash in require.cache) {
+									if (require.cache.hasOwnProperty(cachedHash)) {
+										delete require.cache[cachedHash];
+									}
+								}
+
+								buildRequestedScript(request.header.invoking);
+
+								break;
 							}
-
-							buildRequestedScript(request.header.invoking);
-
-							break;
 						}
 					}
 				}
