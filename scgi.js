@@ -21,7 +21,7 @@
 	Server = function (requestListener) {
 		net.Server.call(this, { allowHalfOpen : true });
 
-		if (requestListener !== undefined) {
+		if (typeof requestListener === typeof Function) {
 			this.on("request", requestListener);
 		}
 
