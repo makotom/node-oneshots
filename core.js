@@ -400,7 +400,8 @@
 		process.on("message", balancerMessageReceptor);
 	};
 
-	process.setuid(CONFIG.serverUid) && process.setgid(CONFIG.serverGid);
+	CONFIG.serverGid && process.setgid(CONFIG.serverGid);
+	CONFIG.serverUid && process.setuid(CONFIG.serverUid);
 
 	if (cluster.isMaster === true) {
 		new Nodebed().balancer();
