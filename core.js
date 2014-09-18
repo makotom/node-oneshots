@@ -22,12 +22,14 @@
 		this.type = messageTypeRegex.test(type) === true ? type : "unknown";
 		this.payload = payload;
 	},
+
 	RequestHeaderMessenger = function (salt, invoking, req) {
 		Messenger.call(this, salt, "header", {
 			invoking : invoking,
 			params : req.params
 		});
 	},
+
 	ResponseHeaderMessenger = function (salt, headers) {
 		Messenger.call(this, salt, "header", {
 			statusCode : 200,
@@ -40,7 +42,7 @@
 	cluster = require("cluster");
 
 	Nodebed.prototype.balancer = function () {
-		var server = require("./scgi.js").createServer(),
+		var server = require("./fcgi.js").createServer(),
 
 		url = require("url"),
 
@@ -149,7 +151,7 @@
 
 		responder = function (req, res) {
 			var salt = Math.random(),
-			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^proxy:scgi:/, "scgi:")),
+			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^proxy:fcgi:/, "fcgi:")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
