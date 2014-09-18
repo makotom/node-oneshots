@@ -6,8 +6,7 @@
 	var CONFIG = {
 		serverUid : "http",
 		serverGid : "http",
-		listenIPv4 : true,
-		listenIPv6 : true,
+		serviceAddr : ["0.0.0.0", "::"],
 		servicePort : 37320,
 		workersMaxNum : 64,
 		workersKeepIdle : 7200,	// Unit: second
@@ -182,8 +181,9 @@
 			req.setTimeout(CONFIG.workersTimeout * 1000, timeoutResponse.bind(resources));
 		};
 
-		CONFIG.listenIPv4 && server.listen(CONFIG.servicePort, "0.0.0.0");
-		CONFIG.listenIPv6 && server.listen(CONFIG.servicePort, "::");
+		CONFIG.serviceAddr.forEach(function (addr) {
+			server.listen(CONFIG.servicePort, addr);
+		});
 
 		server.on("request", responder);
 	};
