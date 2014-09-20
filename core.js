@@ -15,23 +15,23 @@
 		messageCap : 1024 * 32	// Unit: octet
 	},
 
-	Messenger = function (salt, type, payload) {
+	Messenger = function (nonce, type, payload) {
 		var messageTypeRegex = /^(?:header|body|end)$/;
 
-		this.salt = salt;
+		this.nonce = nonce;
 		this.type = messageTypeRegex.test(type) === true ? type : "unknown";
 		this.payload = payload;
 	},
 
-	RequestHeaderMessenger = function (salt, invoking, req) {
-		Messenger.call(this, salt, "header", {
+	RequestHeaderMessenger = function (nonce, invoking, req) {
+		Messenger.call(this, nonce, "header", {
 			invoking : invoking,
 			params : req.params
 		});
 	},
 
-	ResponseHeaderMessenger = function (salt, headers) {
-		Messenger.call(this, salt, "header", {
+	ResponseHeaderMessenger = function (nonce, headers) {
+		Messenger.call(this, nonce, "header", {
 			statusCode : 200,
 			headers : headers
 		});
@@ -49,26 +49,35 @@
 		idleWorker = function () {
 			this.isIdle = true;
 			this.stopIdling = setTimeout(this.kill.bind(this), CONFIG.workersKeepIdle * 1000);
+			this.visitedAt = new Date();
 		},
 
 		invokeWorker = function (path) {
-			var worker = null, numOfActiveWorkers = 0;
+			var worker = null, oldestIdleWorker = null, numOfActiveWorkers = 0;
 
 			for (let workerId in cluster.workers) {
 				if (cluster.workers.hasOwnProperty(workerId)) {
 					numOfActiveWorkers += 1;
 
-					if (cluster.workers[workerId].workFor === path && cluster.workers[workerId].isIdle === true) {
-						worker = cluster.workers[workerId];
-						clearTimeout(cluster.workers[workerId].stopIdling);
-						break;
+					if (cluster.workers[workerId].isIdle === true) {
+						if (cluster.workers[workerId].workFor === path) {
+							worker = cluster.workers[workerId];
+							clearTimeout(cluster.workers[workerId].stopIdling);
+							break;
+						} else if (oldestIdleWorker === null || cluster.workers[workerId].visitedAt.getTime() < oldestIdleWorker.visitedAt.getTime()) {
+							oldestIdleWorker = cluster.workers[workerId];
+						}
 					}
 				}
 			}
 
 			if (worker === null) {
 				if (numOfActiveWorkers >= CONFIG.workersMaxNum) {
-					return null;
+					if (oldestIdleWorker) {
+						oldestIdleWorker.kill();
+					} else {
+						return null;
+					}
 				}
 
 				worker = cluster.fork();
@@ -77,38 +86,38 @@
 			}
 
 			worker.isIdle = false;
+			worker.visitedAt = new Date();
 
 			return worker;
 		},
 
 		workerMessageReceptor = function (workerMes) {
-			var res = this.res, worker = this.worker;
-
-			if (workerMes.salt !== this.salt) {
+			if (workerMes.nonce !== this.nonce) {
 				return;
 			}
 
 			switch (workerMes.type) {
 				case "header":
 					if (! isNaN(workerMes.payload.statusCode)) {
-						res.setStatus(workerMes.payload.statusCode);
+						this.res.setStatus(workerMes.payload.statusCode);
 					}
 
-					workerMes.payload.headers.forEach(function (header) {
-						res.setHeader(header);
-					});
+					for (let i = 0; i < workerMes.payload.headers.length; i += 1) {
+						this.res.setHeader(workerMes.payload.headers[i]);
+					}
 
 					break;
 
 				case "body":
-					res.write(new Buffer(workerMes.payload));
+					this.res.write(new Buffer(workerMes.payload));
 					break;
 
 				case "end":
-					res.end();
-					worker.removeListener("message", this.workerMessageReceiver);
-					worker.removeListener("exit", this.workerAbendNotifier);
-					worker.idle();
+					this.res.end();
+					this.worker.removeListener("message", this.workerMessageReceiver);
+					clearTimeout(this.timer);
+					this.worker.removeListener("exit", this.workerAbendNotifier);
+					this.worker.idle();
 					break;
 
 				default:
@@ -117,7 +126,7 @@
 		},
 
 		onReqData = function (bChunk) {
-			var messageContainer = new Messenger(this.salt, "body", null), p = 0;
+			var messageContainer = new Messenger(this.nonce, "body", null), p = 0;
 
 			while (p < bChunk.length) {
 				messageContainer.payload = bChunk.slice(
@@ -129,7 +138,7 @@
 		},
 
 		onReqEnd = function () {
-			this.worker.send(new Messenger(this.salt, "end"));
+			this.worker.send(new Messenger(this.nonce, "end"));
 			this.worker.on("message", this.workerMessageReceiver);
 		},
 
@@ -150,16 +159,16 @@
 		},
 
 		responder = function (req, res) {
-			var salt = Math.random(),
+			var nonce = Math.random(),
 			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^proxy:fcgi:/, "fcgi:")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
 
 			resources = {
-				salt : salt,
+				nonce : nonce,
 				res : res,
-				worker : worker
+				worker : worker,
 			};
 
 			if (worker === null) {
@@ -172,7 +181,7 @@
 			resources.workerMessageReceiver = workerMessageReceptor.bind(resources);
 			resources.workerAbendNotifier = onWorkerAbend.bind(resources);
 
-			worker.send(new RequestHeaderMessenger(salt, invoking, req));
+			worker.send(new RequestHeaderMessenger(nonce, invoking, req));
 
 			req.on("data", onReqData.bind(resources));
 			req.on("end", onReqEnd.bind(resources));
@@ -180,7 +189,7 @@
 
 			worker.on("exit", resources.workerAbendNotifier);
 
-			req.setTimeout(CONFIG.workersTimeout * 1000, timeoutResponse.bind(resources));
+			resources.timer = setTimeout(timeoutResponse.bind(resources), CONFIG.workersTimeout * 1000);
 		};
 
 		CONFIG.serviceAddr.forEach(function (addr) {
@@ -215,7 +224,7 @@
 		genInstanceInterface = function (request) {
 			var ret = {},
 
-			salt = request.salt,
+			nonce = request.nonce,
 
 			responseStatus = NaN,
 			responseHeaders = [],
@@ -228,7 +237,7 @@
 			},
 
 			flushHeaders = function () {
-				var messageContainer = new ResponseHeaderMessenger(salt, responseHeaders);
+				var messageContainer = new ResponseHeaderMessenger(nonce, responseHeaders);
 
 				if(! isNaN(responseStatus)) {
 					messageContainer.payload.statusCode = responseStatus;
@@ -260,7 +269,7 @@
 			};
 
 			ret.flush = function () {
-				var messageContainer = new Messenger(salt, "body", null),
+				var messageContainer = new Messenger(nonce, "body", null),
 				bChunk = typeof bCache.chunks[0] === "string" ? bCache.chunks.join("") : Buffer.concat(bCache.chunks, bCache.chachedLength);
 
 				bCache.autoFlush !== null && clearTimeout(bCache.autoFlush);
@@ -319,7 +328,7 @@
 
 			ret.end = function () {
 				ret.flush();
-				process.send(new Messenger(salt, "end"));
+				process.send(new Messenger(nonce, "end"));
 			};
 
 			return ret;
@@ -373,7 +382,7 @@
 			switch (messenger.type) {
 				case "header":
 					request = {
-						salt : messenger.salt,
+						nonce : messenger.nonce,
 						header : messenger.payload,
 						body : {
 							length : 0,
@@ -383,7 +392,7 @@
 					break;
 
 				case "body":
-					if (messenger.salt === request.salt) {
+					if (messenger.nonce === request.nonce) {
 						let newBodyChunk = new Buffer(messenger.payload);
 
 						request.body.chunks.push(newBodyChunk);
