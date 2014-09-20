@@ -103,7 +103,7 @@
 
 		this.reqId = id;
 		this.socket = socket;
-		this.onEnd = function () {};
+		this.closeSocketOnEnd = false;
 
 		this.setHeader = ServerResponse.prototype.setHeader.bind(this, headerInfo);
 		this.flushHeaders = ServerResponse.prototype.flushHeaders.bind(this, headerInfo);
@@ -166,10 +166,12 @@
 		sendFCGIRecord(this.socket, "FCGI_STDOUT", this.reqId, new Buffer(0));
 		sendFCGIEndRecord(this.socket, this.reqId, "FCGI_REQUEST_COMPLETE");
 
-		if (this.socket._writableState.writing === false) {
-			this.onEnd();
-		} else {
-			this.socket.once("drain", this.onEnd);
+		if (this.closeSocketOnEnd) {
+			if (this.socket._writableState.writing === false) {
+				this.socket.end();
+			} else {
+				this.socket.once("drain", this.socket.end);
+			}
 		}
 	};
 
@@ -220,7 +222,7 @@
 	onClientData = function (data) {
 		this.clientBuffered = this.clientBuffered !== null ? Buffer.concat([this.clientBuffered, data], this.clientBuffered.length + data.length) : data;
 
-		if (this.clientBuffered.length < 8) {
+		if (this.clientBuffered.length < CONST.FCGIHeaderLength) {
 			return;
 		}
 
@@ -267,8 +269,8 @@
 					bodyEnded : false,
 				};
 
-				if (msgContent[CONST.FCGIFlagsOffset] & 1 === 0) {
-					this.sessions[msgHeader.reqId].res.onEnd = this.socket.end;
+				if (msgContent[CONST.FCGIFlagsOffset] % 2 === 0) {
+					this.sessions[msgHeader.reqId].res.closeSocketOnEnd = true;
 				}
 			} else {
 				let session = this.sessions[msgHeader.reqId];
@@ -295,8 +297,8 @@
 								case 1:
 									r[s] += msgContent[p];
 
-									if (msgContent[p] >> 7 === 1) {
-										r[s] = msgContent.readUInt32BE(p) & 0x7fffffff;
+									if (msgContent[p] >= 0x80) {
+										r[s] = msgContent.readUInt32BE(p) - 0x80000000;
 										p += 4;
 									} else {
 										r[s] = msgContent[p];
