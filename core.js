@@ -106,10 +106,15 @@
 						this.res.setHeader(workerMes.payload.headers[i]);
 					}
 
+					clearTimeout(this.timer);
+					this.timer = setTimeout(this.timeoutAction, CONFIG.workersTimeout * 1000);
+
 					break;
 
 				case "body":
 					this.res.write(new Buffer(workerMes.payload));
+					clearTimeout(this.timer);
+					this.timer = setTimeout(this.timeoutAction, CONFIG.workersTimeout * 1000);
 					break;
 
 				case "end":
@@ -168,7 +173,7 @@
 			resources = {
 				nonce : nonce,
 				res : res,
-				worker : worker,
+				worker : worker
 			};
 
 			if (worker === null) {
@@ -189,7 +194,8 @@
 
 			worker.on("exit", resources.workerAbendNotifier);
 
-			resources.timer = setTimeout(timeoutResponse.bind(resources), CONFIG.workersTimeout * 1000);
+			resources.timeoutAction = timeoutResponse.bind(resources);
+			resources.timer = setTimeout(resources.timeoutAction, CONFIG.workersTimeout * 1000);
 		};
 
 		CONFIG.serviceAddr.forEach(function (addr) {
