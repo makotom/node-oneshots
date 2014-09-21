@@ -277,6 +277,7 @@
 
 				if (session === undefined) {
 					sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_UNOPENED_REQUEST");
+					return;
 				}
 
 				switch (CONST.FCGIRecordTypes[msgHeader.type]) {
@@ -342,8 +343,11 @@
 						break;
 					case "FCGI_ABORT_REQUEST":
 						sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_REQUEST_COMPLETE");
+						return;
+
 					default:
 						sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_BAD_RECORD");
+						return;
 				}
 			}
 		}
