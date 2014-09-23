@@ -206,7 +206,7 @@
 		var connection = {
 			server : this,
 			socket : socket,
-			clientBuffered : null,
+			cDataBuffered : null,
 			sessions : []
 		};
 
@@ -220,10 +220,10 @@
 	};
 
 	onClientData = function (data) {
-		this.clientBuffered = this.clientBuffered !== null ? Buffer.concat([this.clientBuffered, data], this.clientBuffered.length + data.length) : data;
+		this.cDataBuffered = this.cDataBuffered !== null ? Buffer.concat([this.cDataBuffered, data], this.cDataBuffered.length + data.length) : data;
 
-		while (this.clientBuffered !== null) {
-			let parsingData = this.clientBuffered, msgHeader = {}, msgContent = null;
+		while (this.cDataBuffered !== null) {
+			let parsingData = this.cDataBuffered, msgHeader = {}, msgContent = null;
 
 			if (parsingData.length < CONST.FCGIHeaderLength) {
 				break;
@@ -236,12 +236,12 @@
 			msgHeader.paddingLength = parsingData[CONST.FCGIPaddingLengthOffset];
 
 			if (parsingData.length < CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength) {
-				this.clientBuffered = parsingData;
+				this.cDataBuffered = parsingData;
 				break;
 			} else if (parsingData.length > CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength) {
-				this.clientBuffered = parsingData.slice(CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength);
+				this.cDataBuffered = parsingData.slice(CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength);
 			} else {
-				this.clientBuffered = null;
+				this.cDataBuffered = null;
 			}
 
 			if (! CONST.FCGIRecordTypes[msgHeader.type]) {
