@@ -222,12 +222,12 @@
 	onClientData = function (data) {
 		this.clientBuffered = this.clientBuffered !== null ? Buffer.concat([this.clientBuffered, data], this.clientBuffered.length + data.length) : data;
 
-		if (this.clientBuffered.length < CONST.FCGIHeaderLength) {
-			return;
-		}
-
 		while (this.clientBuffered !== null) {
 			let parsingData = this.clientBuffered, msgHeader = {}, msgContent = null;
+
+			if (parsingData.length < CONST.FCGIHeaderLength) {
+				break;
+			}
 
 			msgHeader.version = parsingData[CONST.FCGIVersionOffset];
 			msgHeader.type = parsingData[CONST.FCGITypeOffset];
@@ -237,7 +237,7 @@
 
 			if (parsingData.length < CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength) {
 				this.clientBuffered = parsingData;
-				return;
+				break;
 			} else if (parsingData.length > CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength) {
 				this.clientBuffered = parsingData.slice(CONST.FCGIHeaderLength + msgHeader.contentLength + msgHeader.paddingLength);
 			} else {
