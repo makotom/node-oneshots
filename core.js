@@ -4,6 +4,7 @@
 	"use strict";
 
 	var CONFIG = {
+		CGIType : "fcgi",
 		serverUid : "http",
 		serverGid : "http",
 		serviceAddr : ["0.0.0.0", "::"],
@@ -42,7 +43,7 @@
 	cluster = require("cluster");
 
 	Nodebed.prototype.balancer = function () {
-		var server = require("./fcgi.js").createServer(),
+		var server = require("./" + CONFIG.CGIType + ".js").createServer(),
 
 		url = require("url"),
 
@@ -165,7 +166,7 @@
 
 		responder = function (req, res) {
 			var nonce = Math.random(),
-			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^proxy:fcgi:/, "fcgi:")),
+			requested = url.parse(req.params.SCRIPT_FILENAME.replace(/^proxy:.?cgi:/, CONFIG.CGIType + ":")),
 			invoking = url.parse(requested.pathname).pathname,
 
 			worker = invokeWorker(invoking),
@@ -356,9 +357,10 @@
 				} else {
 					for (let cachedHash in require.cache) {
 						if (require.cache.hasOwnProperty(cachedHash)) {
-							let cached = require.cache[cachedHash];
+							let stat = fs.statSync(require.cache[cachedHash].filename),
+							cache = built.builtAt.getTime();
 
-							if (fs.statSync(cached.filename).ctime.getTime() > built.builtAt.getTime()) {
+							if (stat.ctime.getTime() > cache || stat.mtime.getTime() > cache) {
 								for (let cachedHash in require.cache) {
 									if (require.cache.hasOwnProperty(cachedHash)) {
 										delete require.cache[cachedHash];
