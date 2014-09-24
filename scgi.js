@@ -29,7 +29,9 @@
 		this.on("clientError", onClientError);
 	};
 	util.inherits(Server, net.Server);
+
 	Server.prototype.timeout = DEFAULTS.timeout;
+
 	Server.prototype.setTimeout = function (timeoutAfter, callback) {
 		this.timeout = timeoutAfter;
 
@@ -47,6 +49,7 @@
 		this.on("close", this.removeAllListeners);
 	};
 	util.inherits(ClientRequest, EE);
+
 	ClientRequest.prototype.setTimeout = function (timeoutAfter, callback) {
 		this.socket.setTimeout(timeoutAfter);
 
@@ -74,10 +77,13 @@
 		this.on("finish", this.removeAllListeners);
 	};
 	util.inherits(ServerResponse, EE);
+
 	ServerResponse.prototype.headerFinalized = false;
+
 	ServerResponse.prototype.setStatus = function (sCode, reasonPhrase) {
 		this.setHeader(["Status:", sCode.toString(), reasonPhrase !== undefined ? reasonPhrase : defaultStatusPhrase(sCode)].join(" "));
 	};
+
 	ServerResponse.prototype.setHeader = function (headerInfo, headerStatement) {
 		var fieldName = headerStatement.split(":").shift().toLowerCase(),
 		queued = headerInfo.fieldQueue.indexOf(fieldName);
@@ -93,25 +99,26 @@
 		}
 		headerInfo.fieldQueue.push(fieldName);
 	};
-	ServerResponse.prototype.flushHeaders = function (headerInfo, finalizeHeader) {
-		var socket = this.socket;
 
-		if (socket.writable !== true || this.headerFinalized === true) {
+	ServerResponse.prototype.flushHeaders = function (headerInfo, finalizeHeader) {
+		if (this.socket.writable !== true || this.headerFinalized === true) {
 			return;
 		}
 
 		if (headerInfo.fieldQueue.length > 0) {
-			headerInfo.fieldQueue.forEach(function (field) {
-				socket.write(headerInfo.fields[field] + CRLF);
-			});
+			for (let i = 0; i < headerInfo.fieldQueue.length; i += 1) {
+				let field = headerInfo.fieldQueue[i];
+				this.socket.write(headerInfo.fields[field] + CRLF);
+			}
 		}
 		headerInfo.fieldQueue = [];
 
 		if (finalizeHeader === true) {
-			socket.write(CRLF);
+			this.socket.write(CRLF);
 			this.headerFinalized = true;
 		}
 	};
+
 	ServerResponse.prototype.write = function (data) {
 		if (this.socket.writable !== true) {
 			return;
@@ -120,6 +127,7 @@
 		this.headerFinalized !== true && this.flushHeaders(true);
 		this.socket.write(data);
 	};
+
 	ServerResponse.prototype.end = function (data) {
 		data !== undefined && this.write(data);
 
@@ -142,10 +150,10 @@
 		var connection = {
 			server : this,
 			socket : socket,
-			reqDraft : {},
 			req : new ClientRequest(socket),
 			res : new ServerResponse(socket),
-			clientPhase : 0
+			clientPhase : 0,
+			parserInfo : {}
 		};
 
 		socket.setTimeout(this.timeout);
@@ -158,45 +166,43 @@
 	};
 
 	onClientData = function (data) {
-		var reqDraft = this.reqDraft,
-		i = 0, dataChar = "";
+		var i = 0;
 
-
-		if (this.clientPhase === 0) {	// Beginning
-			if (reqDraft.headerLengthStr === undefined) {
-				reqDraft.headerLengthStr = "";
+		if (this.clientPhase === 0) {
+			if (this.parserInfo.headerLength === undefined) {
+				this.parserInfo.headerLength = 0;
 			}
 
 			for (; i < data.length; i += 1) {
-				dataChar = String.fromCharCode(data[i]);
+				let dataChar = String.fromCharCode(data[i]),
+				dataInt = parseInt(dataChar, 10);
 
-				if (isNaN(parseInt(dataChar, 10))) {
-					if (dataChar !== ":" || reqDraft.headerLengthStr.length < 1) {
+				if (isNaN(dataInt)) {
+					if (dataChar !== ":" || this.parserInfo.headerLength === 0) {
 						this.server.emit("clientError", new Error("Malformed netstring of headers"), this.socket);
 						return;
 					} else {
-						reqDraft.headerLength = parseInt(reqDraft.headerLengthStr, 10);
 						this.clientPhase += 1;
 						i += 1;
 						break;
 					}
+				} else {
+					this.parserInfo.headerLength = 10 * this.parserInfo.headerLength + dataInt;
 				}
-
-				reqDraft.headerLengthStr += dataChar;
 			}
 		}
 
-		if (this.clientPhase === 1) {	// Midst header
-			if (reqDraft.parsedHeaderLength === undefined) {
-				reqDraft.parsedHeaderLength = 0;
-				reqDraft.headerState = 0;
-				reqDraft.headerParserStack = ["", ""];
+		if (this.clientPhase === 1) {
+			if (this.parserInfo.parsedHeaderLength === undefined) {
+				this.parserInfo.parsedHeaderLength = 0;
+				this.parserInfo.headerParsingState = 0;
+				this.parserInfo.parsingHeaderPair = ["", ""];
 			}
 
 			for (; i < data.length; i += 1) {
-				dataChar = String.fromCharCode(data[i]);
+				let dataChar = String.fromCharCode(data[i]);
 
-				if (reqDraft.parsedHeaderLength === reqDraft.headerLength) {
+				if (this.parserInfo.parsedHeaderLength === this.parserInfo.headerLength) {
 					if (dataChar !== ",") {
 						this.server.emit("clientError", new Error("Header section is longer than declared"), this.socket);
 					}
@@ -204,44 +210,45 @@
 					this.clientPhase += 1;
 					this.server.emit("request", this.req, this.res);
 
-					reqDraft.bodyLength = parseInt(this.req.params.CONTENT_LENGTH, 10);
-					process.nextTick(onClientData.bind(this, data.slice(i + 1)));
+					this.parserInfo.bodyLength = parseInt(this.req.params.CONTENT_LENGTH, 10);
 
-					return;
+					i += 1;
+
+					break;
 				}
 
-				reqDraft.parsedHeaderLength += 1;
+				this.parserInfo.parsedHeaderLength += 1;
 
 				if (dataChar === "\u0000") {
-					if (reqDraft.headerState === 1) {
-						this.req.params[reqDraft.headerParserStack[0]] = reqDraft.headerParserStack[1];
-						reqDraft.headerParserStack = ["", ""];
+					if (this.parserInfo.headerParsingState === 1) {
+						this.req.params[this.parserInfo.parsingHeaderPair[0]] = this.parserInfo.parsingHeaderPair[1];
+						this.parserInfo.headerParsingState = 0;
+						this.parserInfo.parsingHeaderPair = ["", ""];
+					} else {
+						this.parserInfo.headerParsingState = 1;
 					}
-
-					reqDraft.headerState ^= 1;
-					continue;
+				} else {
+					this.parserInfo.parsingHeaderPair[this.parserInfo.headerParsingState] += dataChar;
 				}
-
-				reqDraft.headerParserStack[reqDraft.headerState] += dataChar;
 			}
 		}
 
 		if (this.clientPhase === 2) {
-			if (reqDraft.bodyReceivedLength === undefined) {
-				reqDraft.bodyReceivedLength = 0;
+			if (this.parserInfo.bodyReceivedLength === undefined) {
+				this.parserInfo.bodyReceivedLength = 0;
 			}
 
-			reqDraft.bodyReceivedLength += data.length;
+			this.parserInfo.bodyReceivedLength += data.length - i;
 
-			if (reqDraft.bodyReceivedLength > reqDraft.bodyLength) {
+			if (this.parserInfo.bodyReceivedLength > this.parserInfo.bodyLength) {
 				this.server.emit("clientError", new Error("Body is larger than declared"), this.socket);
 				return;
 			}
 
-			this.req.emit("data", data);
+			this.req.emit("data", data.slice(i));
 
-			if (reqDraft.bodyReceivedLength === reqDraft.bodyLength) {
-				reqDraft.clientPhase += 1;
+			if (this.parserInfo.bodyReceivedLength === this.parserInfo.bodyLength) {
+				this.parserInfo.clientPhase += 1;
 				this.req.emit("end");
 			}
 		}
@@ -252,9 +259,7 @@
 	};
 
 	onClientFin = function () {
-		if (this.clientPhase < 2) {
-			this.server.emit("clientError", new Error("Client FIN before request completes"), this.socket);
-		}
+		this.socket.end();
 	};
 
 	onSocketError = function (e) {
