@@ -4,7 +4,7 @@
 	"use strict";
 
 	var CONFIG = {
-		CGIType : "fcgi",
+		CGIType : "scgi",
 		serverUid : "http",
 		serverGid : "http",
 		serviceAddr : ["0.0.0.0", "::"],
@@ -13,7 +13,7 @@
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageExpiry : 500,	// Unit: millisecond
-		messageCap : 32 * 1024,	// Unit: octet
+		messageCap : 64 * 1024,	// Unit: octet
 		requestSizeLimit : 200 * 1024 * 1024	// Unit: octet
 	},
 
