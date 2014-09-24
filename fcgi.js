@@ -164,12 +164,12 @@
 
 	ServerResponse.prototype.write = function (data) {
 		this.headerFinalized !== true && this.flushHeaders(true);
-		sendFCGIRecord(this.socket, "FCGI_STDOUT", this.reqId, new Buffer(data));
+		data !== undefined && sendFCGIRecord(this.socket, "FCGI_STDOUT", this.reqId, new Buffer(data));
 	};
 
 	ServerResponse.prototype.end = function (data) {
-		data !== undefined && this.write(data);
-		sendFCGIRecord(this.socket, "FCGI_STDOUT", this.reqId, new Buffer(0));
+		this.write(data);
+		this.write(new Buffer(0));
 		sendFCGIEndRecord(this.socket, this.reqId, "FCGI_REQUEST_COMPLETE");
 
 		if (this.closeSocketOnEnd) {
