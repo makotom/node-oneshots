@@ -46,7 +46,7 @@
 	// Methods
 	createServer,
 	// Internal functions
-	defaultStatusPhrase, sendFCGIRecord, sendFCGIEndRecord, onConnection, onClientData, onClientError, onClientFin, onSocketError, onSocketClose, onSocketTimeout,
+	defaultStatusPhrase, formatFCGIRecord, sendFCGIRecord, sendFCGIEndRecord, onConnection, onClientData, onClientError, onClientFin, onSocketError, onSocketClose, onSocketTimeout,
 	// Internal values
 	CRLF = "\r\n", wellknownStatuses = require("./http_status.js").IANAStatuses,
 
@@ -139,20 +139,26 @@
 	};
 
 	ServerResponse.prototype.flushHeaders = function (headerInfo, finalizeHeader) {
+		var headerRecords = [];
+
 		if (this.socket.writable !== true || this.headerFinalized === true) {
 			return;
 		}
 
 		if (headerInfo.fieldQueue.length > 0) {
 			headerInfo.fieldQueue.forEach(function (field) {
-				sendFCGIRecord(this.socket, "FCGI_STDOUT", this.reqId, new Buffer(headerInfo.fields[field] + CRLF));
+				headerRecords.push(formatFCGIRecord("FCGI_STDOUT", this.reqId, new Buffer(headerInfo.fields[field] + CRLF)));
 			}.bind(this));
 		}
 		headerInfo.fieldQueue = [];
 
 		if (finalizeHeader === true) {
-			sendFCGIRecord(this.socket, "FCGI_STDOUT", this.reqId, new Buffer(CRLF));
+			headerRecords.push(formatFCGIRecord("FCGI_STDOUT", this.reqId, new Buffer(CRLF)));
 			this.headerFinalized = true;
+		}
+
+		if (this.socket.writable === true) {
+			this.socket.write(Buffer.concat(headerRecords));
 		}
 	};
 
@@ -183,7 +189,7 @@
 		return wellknownStatuses[sCode] !== undefined ? wellknownStatuses[sCode] : [sCode.toString(), "Unknown Reason"].join(" ");
 	};
 
-	sendFCGIRecord = function (socket, type, reqId, content) {
+	formatFCGIRecord = function (type, reqId, content) {
 		var msgHeader = new Buffer(CONST.FCGIHeaderLength);
 
 		msgHeader.fill(0);
@@ -193,8 +199,12 @@
 		msgHeader.writeUInt16BE(content.length, CONST.FCGIContentLengthOffset);
 		msgHeader[CONST.FCGIPaddingLengthOffset] = 0;
 
+		return Buffer.concat([msgHeader, content], CONST.FCGIHeaderLength + content.length);
+	};
+
+	sendFCGIRecord = function (socket, type, reqId, content) {
 		if (socket.writable === true) {
-			socket.write(Buffer.concat([msgHeader, content], CONST.FCGIHeaderLength + content.length));
+			socket.write(formatFCGIRecord(type, reqId, content));
 		}
 	};
 
@@ -256,10 +266,14 @@
 			} else if (CONST.FCGIRecordTypes[msgHeader.type] === "FCGI_BEGIN_REQUEST") {
 				if (this.sessions[msgHeader.reqId] !== undefined) {
 					sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_DUPLICATED_REQUEST");
+					this.socket.end();
+					break;
 				}
 
 				if (msgContent.readUInt16BE(CONST.FCGIRoleOffset) !== CONST.FCGIRole) {
 					sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_UNKNOWN_ROLE");
+					this.socket.end();
+					break;
 				}
 
 				this.sessions[msgHeader.reqId] = {
@@ -277,6 +291,7 @@
 
 				if (session === undefined) {
 					sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_UNOPENED_REQUEST");
+					this.socket.end();
 					return;
 				}
 
@@ -343,10 +358,12 @@
 						break;
 					case "FCGI_ABORT_REQUEST":
 						sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_REQUEST_COMPLETE");
+						this.socket.end();
 						return;
 
 					default:
 						sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_BAD_RECORD");
+						this.socket.end();
 						return;
 				}
 			}
@@ -358,9 +375,7 @@
 	};
 
 	onClientFin = function () {
-		if (this.clientPhase < 2) {
-			this.server.emit("clientError", new Error("Client FIN before request completes"), this.socket);
-		}
+		this.socket.end();
 	};
 
 	onSocketError = function (e) {
