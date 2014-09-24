@@ -13,7 +13,8 @@
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageExpiry : 500,	// Unit: millisecond
-		messageCap : 1024 * 32	// Unit: octet
+		messageCap : 32 * 1024,	// Unit: octet
+		requestSizeLimit : 200 * 1024 * 1024	// Unit: octet
 	},
 
 	Messenger = function (nonce, type, payload) {
@@ -139,13 +140,26 @@
 					p,
 					p = p + CONFIG.messageCap < bChunk.length ? p + CONFIG.messageCap : bChunk.length
 				);
-				this.worker.send(messageContainer);
+
+				if (this.worker.state === "none" || this.worker.state === "online") {
+					this.worker.send(messageContainer);
+					this.receivedBytes += messageContainer.payload.length;
+				}
+
+				if (this.receivedBytes > CONFIG.requestSizeLimit) {
+					this.res.setStatus(413);
+					this.res.end();
+					this.worker.kill();
+					return;
+				}
 			}
 		},
 
 		onReqEnd = function () {
-			this.worker.send(new Messenger(this.nonce, "end"));
-			this.worker.on("message", this.workerMessageReceiver);
+			if (this.worker.state === "none" || this.worker.state === "online") {
+				this.worker.send(new Messenger(this.nonce, "end"));
+				this.worker.on("message", this.workerMessageReceiver);
+			}
 		},
 
 		onResClose = function () {
@@ -174,7 +188,8 @@
 			resources = {
 				nonce : nonce,
 				res : res,
-				worker : worker
+				worker : worker,
+				receivedBytes : 0
 			};
 
 			if (worker === null) {
