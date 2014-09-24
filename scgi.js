@@ -234,20 +234,20 @@
 		}
 
 		if (this.clientPhase === 2) {
-			if (this.parserInfo.bodyReceivedLength === undefined) {
-				this.parserInfo.bodyReceivedLength = 0;
+			if (this.parserInfo.receivedBodyLength === undefined) {
+				this.parserInfo.receivedBodyLength = 0;
 			}
 
-			this.parserInfo.bodyReceivedLength += data.length - i;
+			this.parserInfo.receivedBodyLength += data.length - i;
 
-			if (this.parserInfo.bodyReceivedLength > this.parserInfo.bodyLength) {
+			if (this.parserInfo.receivedBodyLength > this.parserInfo.bodyLength) {
 				this.server.emit("clientError", new Error("Body is larger than declared"), this.socket);
 				return;
 			}
 
 			this.req.emit("data", data.slice(i));
 
-			if (this.parserInfo.bodyReceivedLength === this.parserInfo.bodyLength) {
+			if (this.parserInfo.receivedBodyLength === this.parserInfo.bodyLength) {
 				this.parserInfo.clientPhase += 1;
 				this.req.emit("end");
 			}
