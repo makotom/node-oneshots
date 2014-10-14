@@ -16,13 +16,17 @@ msvcrt.setmode(p, os.O_BINARY)
 while True:
 	while True:
 		hFromPipe = os.read(p, 8)
+		cFromPipe = os.read(p, 256 * hFromPipe[4] + hFromPipe[5])
+
+		if (hFromPipe[1] == 2):
+			continue
+
 		try:
 			s.sendall(hFromPipe)
 		except:
 			s = initSocket()
 			s.sendall(hFromPipe)
 
-		cFromPipe = os.read(p, 256 * hFromPipe[4] + hFromPipe[5])
 		s.sendall(cFromPipe)
 
 		if (hFromPipe[1] == 5 and len(cFromPipe) == 0):
