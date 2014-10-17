@@ -13,7 +13,7 @@
 		workersKeepIdle : 7200,	// Unit: second
 		workersTimeout : 60,	// Unit: second
 		messageExpiry : 500,	// Unit: millisecond
-		messageCap : 64 * 1024,	// Unit: octet
+		messageCap : 56 * 1024,	// Unit: octet
 		requestSizeLimit : 200 * 1024 * 1024	// Unit: octet
 	},
 
