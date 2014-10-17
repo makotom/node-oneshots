@@ -139,26 +139,24 @@
 	};
 
 	ServerResponse.prototype.flushHeaders = function (headerInfo, finalizeHeader) {
-		var headerRecords = [];
+		var headerStrings = [];
 
-		if (this.socket.writable !== true || this.headerFinalized === true) {
+		if (this.socket.writable !== true || finalizeHeader !== true || this.headerFinalized === true) {
 			return;
 		}
 
 		if (headerInfo.fieldQueue.length > 0) {
 			headerInfo.fieldQueue.forEach(function (field) {
-				headerRecords.push(formatFCGIRecord("FCGI_STDOUT", this.reqId, new Buffer(headerInfo.fields[field] + CRLF)));
+				headerStrings.push(headerInfo.fields[field]);
 			}.bind(this));
 		}
 		headerInfo.fieldQueue = [];
 
-		if (finalizeHeader === true) {
-			headerRecords.push(formatFCGIRecord("FCGI_STDOUT", this.reqId, new Buffer(CRLF)));
-			this.headerFinalized = true;
-		}
+		headerStrings.push(CRLF);
+		this.headerFinalized = true;
 
 		if (this.socket.writable === true) {
-			this.socket.write(Buffer.concat(headerRecords));
+			this.socket.write(formatFCGIRecord("FCGI_STDOUT", this.reqId, new Buffer(headerStrings.join(CRLF))));
 		}
 	};
 
