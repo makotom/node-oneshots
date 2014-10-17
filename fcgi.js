@@ -354,6 +354,7 @@
 						session.req.emit("data", msgContent);
 
 						break;
+
 					case "FCGI_ABORT_REQUEST":
 						sendFCGIEndRecord(this.socket, msgHeader.reqId, "FCGI_REQUEST_COMPLETE");
 						this.socket.end();
