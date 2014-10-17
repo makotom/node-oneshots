@@ -259,7 +259,9 @@
 	};
 
 	onClientFin = function () {
-		this.socket.end();
+		if (this.clientPhase < 3) {
+			this.server.emit("clientError", new Error("Unexpected FIN received"), this.socket);
+		}
 	};
 
 	onSocketError = function (e) {

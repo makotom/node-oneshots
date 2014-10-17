@@ -373,7 +373,15 @@
 	};
 
 	onClientFin = function () {
-		this.socket.end();
+		var allEnded = true;
+
+		this.sessions.forEach(function (session) {
+			allEnded = allEnded && session.dataEnded;
+		});
+
+		if (allEnded !== true) {
+			this.server.emit("clientError", new Error("Unexpected FIN received"), this.socket);
+		}
 	};
 
 	onSocketError = function (e) {
