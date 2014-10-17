@@ -4,7 +4,7 @@
 	"use strict";
 
 	var CONFIG = {
-		CGIType : "scgi",
+		CGIType : "fcgi",
 		serverUid : "http",
 		serverGid : "http",
 		serviceAddr : ["0.0.0.0", "::"],
