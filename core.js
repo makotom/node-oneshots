@@ -370,17 +370,15 @@
 				if (built === null) {
 					buildRequestedScript(request.header.invoking);
 				} else {
-					for (let cachedHash in require.cache) {
-						if (require.cache.hasOwnProperty(cachedHash)) {
-							let stat = fs.statSync(require.cache[cachedHash].filename),
-							cache = built.builtAt.getTime();
+					let cachedAt = built.builtAt.getTime();
 
-							if (stat.ctime.getTime() > cache || stat.mtime.getTime() > cache) {
-								for (let cachedHash in require.cache) {
-									if (require.cache.hasOwnProperty(cachedHash)) {
-										delete require.cache[cachedHash];
-									}
-								}
+					for (let cacheId in require.cache) {
+						if (require.cache.hasOwnProperty(cacheId) && cacheId !== module.filename) {
+							let stat = fs.statSync(require.cache[cacheId].filename);
+
+							if (stat.ctime.getTime() > cachedAt || stat.mtime.getTime() > cachedAt) {
+								delete require.cache;
+								delete module.children;
 
 								buildRequestedScript(request.header.invoking);
 
