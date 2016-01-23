@@ -7,7 +7,9 @@ nodebed
 * that it hosts multiple scripts under one server using only one listening socket, without forcing hosted scripts blocking each other by adopting multi-process model.
 The software is tested on Apache 2.4 and IIS 8.5 (with the attached forwarder.py).
 
-# File descriptions #
+File descriptions
+-----------------
+
 * core.js: main script
 * fcgi.js: abstraction of FCGI (loaded inside core.js)
 * scgi.js: abstraction of SCGI (loaded inside core.js)
@@ -18,7 +20,9 @@ The software is tested on Apache 2.4 and IIS 8.5 (with the attached forwarder.py
 * LICENCE: licence terms
 * README.md: this file
 
-# Usage #
+Usage
+-----
+
 [TODO]: Write usage instruction.
 
 ---
