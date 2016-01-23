@@ -2,9 +2,11 @@ nodebed
 =======
 
 **nodebed** is a server-side JavaScript scriptlet server for Node.js. It works as a FastCGI process manager, like PHP-FPM, which brokers FastCGI connections and help interactions with scripts running as child processes. Advantages nodebed provides are:
+
 * that it abstracts FastCGI and SCGI communication with an easy-to-use interface,
 * that it lets small JavaScript programmes be invoked efficiently; it caches JIT results, and
 * that it hosts multiple scripts under one server using only one listening socket, without forcing hosted scripts blocking each other by adopting multi-process model.
+
 The software is tested on Apache 2.4 and IIS 8.5 (with the attached forwarder.py).
 
 File descriptions
